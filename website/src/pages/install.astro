@@ -3,7 +3,23 @@ import BaseLayout from '~/components/layout/BaseLayout.astro';
 import Nav from '~/components/layout/Nav.astro';
 import Footer from '~/components/layout/Footer.astro';
 
-const groovy = `repositories {
+const groovy = `dependencies {
+    implementation 'com.aaravlabs:synapse:0.4.0'
+    // ... your other FTC deps
+}`;
+
+const kotlinDsl = `dependencies {
+    implementation("com.aaravlabs:synapse:0.4.0")
+}`;
+
+const maven = `<!-- your pom.xml -->
+<dependency>
+    <groupId>com.aaravlabs</groupId>
+    <artifactId>synapse</artifactId>
+    <version>0.4.0</version>
+</dependency>`;
+
+const gprGroovy = `repositories {
     mavenCentral()
     google()
     maven {
@@ -19,7 +35,7 @@ dependencies {
     implementation 'com.aaravlabs:synapse:0.4.0'
 }`;
 
-const kotlinDsl = `repositories {
+const gprKotlinDsl = `repositories {
     mavenCentral()
     google()
     maven {
@@ -38,30 +54,6 @@ dependencies {
     implementation("com.aaravlabs:synapse:0.4.0")
 }`;
 
-const maven = `<!-- ~/.m2/settings.xml -->
-<settings>
-  <servers>
-    <server>
-      <id>github-synapse</id>
-      <username>\${env.GITHUB_USER}</username>
-      <password>\${env.GITHUB_TOKEN}</password>
-    </server>
-  </servers>
-</settings>
-
-<!-- your pom.xml -->
-<repositories>
-  <repository>
-    <id>github-synapse</id>
-    <url>https://maven.pkg.github.com/IamCoder18/synapse</url>
-  </repository>
-</repositories>
-
-<dependency>
-    <groupId>com.aaravlabs</groupId>
-    <artifactId>synapse</artifactId>
-    <version>0.4.0</version>
-</dependency>`;
 const gradleProps = `# ~/.gradle/gradle.properties (never commit)
 githubUser=<your-github-username>
 githubToken=<a-token-with-read:packages>`;
@@ -86,32 +78,25 @@ public class MyFirstOpMode extends SafeOpMode {
 ---
 <BaseLayout
   title="Install"
-  description="Add Synapse to your FTC Gradle project in three steps."
+  description="Add Synapse to your FTC Gradle project in three minutes — no token needed."
 >
   <Nav />
   <main class="install">
     <header class="install__hero">
       <h1>Install Synapse</h1>
-      <p>Token, dependency, one base class. Three minutes.</p>
+      <p>One dependency. No token. Three minutes.</p>
       <p class="install__hint">
-        Hosted on GitHub Packages — Maven Central publishing is planned for the next release.
-        Full details and troubleshooting: <a href="/docs/get-started/install">the Install guide</a>.
+        Published on <strong>Maven Central</strong> — no authentication and no extra repository
+        needed. Full details and troubleshooting: <a href="/docs/get-started/install">the Install guide</a>.
       </p>
     </header>
 
     <section class="install__step">
-      <h2>1. Configure a GitHub token</h2>
+      <h2>1. Add the dependency</h2>
       <p class="install__hint">
-        GitHub Packages requires authentication even for public packages, so Gradle needs a
-        personal access token with the <code>read:packages</code> scope in
-        <code>~/.gradle/gradle.properties</code>:
+        The standard FTC template already includes <code>mavenCentral()</code> in its repositories,
+        so the dependency is all you need. Pick your build system:
       </p>
-      <pre><code>{gradleProps}</code></pre>
-    </section>
-
-    <section class="install__step">
-      <h2>2. Add the repository and dependency</h2>
-      <p class="install__hint">Pick your build system. The Maven coordinates are the same either way.</p>
       <div class="install__tabs">
         <details open>
           <summary>Gradle (Groovy)</summary>
@@ -129,7 +114,7 @@ public class MyFirstOpMode extends SafeOpMode {
     </section>
 
     <section class="install__step">
-      <h2>3. R8 / ProGuard keep rules</h2>
+      <h2>2. R8 / ProGuard keep rules</h2>
       <p class="install__hint">
         Synapse already ships keep rules in <code>META-INF/proguard/synapse.pro</code>, so minification
         is safe out of the box. You don't need to copy anything — but if you use a custom rules file,
@@ -139,7 +124,7 @@ public class MyFirstOpMode extends SafeOpMode {
     </section>
 
     <section class="install__step">
-      <h2>4. Extend SafeOpMode</h2>
+      <h2>3. Extend SafeOpMode</h2>
       <p class="install__hint">
         Replace <code>extends OpMode</code> with <code>extends SafeOpMode</code> in your OpMode class.
         The base class wires the orchestrator, hardware thread, and a SafeHardwareMap for you.
@@ -148,7 +133,7 @@ public class MyFirstOpMode extends SafeOpMode {
     </section>
 
     <section class="install__step">
-      <h2>5. Verify it works</h2>
+      <h2>4. Verify it works</h2>
       <p class="install__hint">
         Build and run the OpMode above. You should see no errors in logcat and the standard "INIT" →
         "RUN" → "STOP" lifecycle messages from the FTC SDK. If you also see lines like
@@ -157,7 +142,7 @@ public class MyFirstOpMode extends SafeOpMode {
     </section>
 
     <section class="install__step">
-      <h2>6. Optional: enable GamepadAdaptor</h2>
+      <h2>5. Optional: enable GamepadAdaptor</h2>
       <p class="install__hint">
         Add this single line inside <code>onSafeInit()</code> to publish every gamepad field as a topic:
       </p>
@@ -165,6 +150,33 @@ public class MyFirstOpMode extends SafeOpMode {
       <p class="install__hint">
         See <a href="/docs/ftc/gamepad-adaptor">GamepadAdaptor</a> for the full topic map.
       </p>
+    </section>
+
+    <section class="install__step">
+      <h2>6. Advanced: GitHub Packages mirror</h2>
+      <p class="install__hint">
+        Synapse is also mirrored on <code>maven.pkg.github.com/IamCoder18/synapse</code> — useful if
+        your organization already authenticates against GitHub. The mirror requires a personal
+        access token with the <code>read:packages</code> scope even for public packages (a GitHub
+        restriction, not a Synapse one). If in doubt, stay on Maven Central above.
+      </p>
+      <div class="install__tabs">
+        <details>
+          <summary>Use the GitHub Packages mirror</summary>
+          <p class="install__hint">
+            Create a token with the <code>read:packages</code> scope, then put it in
+            <code>~/.gradle/gradle.properties</code> (never commit this file):
+          </p>
+          <pre><code>{gradleProps}</code></pre>
+          <p class="install__hint">Add the mirror repository and the dependency:</p>
+          <pre><code>{gprGroovy}</code></pre>
+          <p class="install__hint">Kotlin DSL:</p>
+          <pre><code>{gprKotlinDsl}</code></pre>
+          <p class="install__hint">
+            Full walkthrough with troubleshooting: <a href="/docs/get-started/install#advanced-github-packages-mirror">the Install guide's GitHub Packages section</a>.
+          </p>
+        </details>
+      </div>
     </section>
   </main>
   <Footer />

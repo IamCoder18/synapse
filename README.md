@@ -264,11 +264,25 @@ subscribers, loops, and actions are logged and never crash the OpMode.
 ## Installation
 
 Synapse is published to **Maven Central**, which needs no authentication —
-just add the dependency. It is also mirrored on **GitHub Packages** (that
-mirror requires a GitHub token with the `read:packages` scope, useful if your
-organization already authenticates against GitHub).
+the standard `FtcRobotController` template already includes `mavenCentral()`
+in its repositories, so adding the dependency is all it takes:
 
-Add this to `build.dependencies.gradle` in your FTC project:
+```gradle
+dependencies {
+    implementation 'com.aaravlabs:synapse:0.4.0'
+    // ... your other FTC deps
+}
+```
+
+### Alternative: GitHub Packages mirror
+
+Synapse is also mirrored on **GitHub Packages**
+(`maven.pkg.github.com/IamCoder18/synapse`) — useful if your organization
+already authenticates against GitHub. That mirror requires a GitHub token
+with the `read:packages` scope even for public packages (a GitHub
+restriction, not a Synapse one). If in doubt, use Maven Central above.
+
+Add the mirror repository and the dependency to `build.dependencies.gradle`:
 
 ```gradle
 repositories {
@@ -289,7 +303,8 @@ dependencies {
 }
 ```
 
-and configure credentials in `~/.gradle/gradle.properties`:
+and configure credentials in `~/.gradle/gradle.properties` (never commit
+this file):
 
 ```properties
 githubUser=<your-github-username>
