@@ -278,11 +278,11 @@ dependencies {
 
 Synapse is also mirrored on **GitHub Packages**
 (`maven.pkg.github.com/IamCoder18/synapse`) — useful if your organization
-already authenticates against GitHub. That mirror requires a GitHub token
-with the `read:packages` scope even for public packages (a GitHub
-restriction, not a Synapse one). If in doubt, use Maven Central above.
+already authenticates against GitHub. That mirror requires a personal access
+token (classic) with the `read:packages` scope even for public packages (a
+GitHub restriction, not a Synapse one). If in doubt, use Maven Central above.
 
-Add the mirror repository and the dependency to `build.dependencies.gradle`:
+Add this to `build.dependencies.gradle`:
 
 ```gradle
 repositories {

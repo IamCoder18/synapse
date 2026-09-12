@@ -41,7 +41,9 @@ dependencies {
 > **Using a version catalog or a newer SDK?** The Maven coordinates stay the same (`com.aaravlabs:synapse`) — only the surrounding syntax changes:
 >
 > ```kotlin
-> implementation("com.aaravlabs:synapse:0.4.0")
+> dependencies {
+>     implementation("com.aaravlabs:synapse:0.4.0")
+> }
 > ```
 
 ## Step 2 — Sync and verify
@@ -77,14 +79,16 @@ GitHub Packages requires authentication for downloads **even though the package 
 
 ### 1 — Configure a GitHub token
 
-Create a [personal access token](https://github.com/settings/tokens) with the `read:packages` scope, then put it in `~/.gradle/gradle.properties` (never commit this file):
+Create a [personal access token (classic)](https://github.com/settings/tokens) with the `read:packages` scope — fine-grained tokens are not accepted by GitHub Packages — then put it in `~/.gradle/gradle.properties` (never commit this file):
 
 ```properties
 githubUser=<your-github-username>
 githubToken=<your-token>
 ```
 
-> **Why a token at all?** GitHub Packages requires authenticated downloads even when the package is public. The token is read-only for packages and never leaves your machine.
+> **Why a token at all?** GitHub Packages requires authenticated downloads even when the package is public. The token lives in your local `gradle.properties` and is only transmitted to `maven.pkg.github.com` over HTTPS when Gradle resolves the dependency; it has no scopes beyond package reads.
+
+> **In a GitHub Actions workflow?** Use the workflow's built-in `GITHUB_TOKEN` with `packages: read` permission instead of a personal token — the snippets below already fall back to the `GITHUB_TOKEN` environment variable.
 
 If you are on a team, each member (and the driver station's build environment) needs their own token in their own `gradle.properties`.
 
