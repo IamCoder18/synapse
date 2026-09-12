@@ -17,9 +17,9 @@ const ld = {
   <main class="cm">
     <header class="cm__head">
       <h1>Community</h1>
-      <p class="cm__disclaimer">
-        <strong>Synapse is new.</strong> FTC Team 23684 — Tech Titans is the one team confirmed to
-        be using it. There are no other confirmed users at this time.
+      <p class="cm__lede">
+        Synapse is built in the open by FTC teams and contributors. Pitch in on code, docs, or
+        share what your team built.
       </p>
     </header>
 
@@ -47,9 +47,13 @@ const ld = {
       <ul class="cm__teams" role="list">
         <li>
           <strong>FTC Team 23684 — Tech Titans</strong>
-          <span class="cm__team-meta">One confirmed team using Synapse.</span>
+          <span class="cm__team-meta">Running Synapse on their robot.</span>
         </li>
       </ul>
+      <p class="cm__add-team">
+        Using Synapse? <a href="https://github.com/IamCoder18/synapse/blob/main/CONTRIBUTING.md" rel="noopener">Open a PR</a>
+        to add your team to this list.
+      </p>
     </section>
 
     <section class="cm__block">
@@ -78,15 +82,11 @@ const ld = {
   .cm code { font-family: var(--font-mono); font-size: 0.9em; background: var(--muted); padding: 0.15em 0.4em; border-radius: 4px; }
   .cm__head { text-align: center; margin-bottom: 3rem; }
   .cm__head h1 { font-size: clamp(2.4rem, 6vw, 3.4rem); margin: 0; }
-  .cm__disclaimer {
+  .cm__lede {
     margin: 1.2rem auto 0;
     max-width: 60ch;
-    padding: 1rem 1.2rem;
-    background: var(--card);
-    border: 1px solid color-mix(in oklab, var(--primary) 35%, transparent);
-    border-radius: 8px;
-    color: var(--foreground);
-    font-size: 0.95rem;
+    color: var(--muted-foreground);
+    font-size: 1.05rem;
   }
   .cm__block { margin-bottom: 2.5rem; }
   .cm__block h2 { font-size: 1.4rem; margin: 0 0 0.6rem; }
@@ -99,6 +99,7 @@ const ld = {
     margin-bottom: 0.5rem;
   }
   .cm__team-meta { display: block; color: var(--muted-foreground); font-size: 0.85rem; }
+  .cm__add-team { margin-top: 0.8rem; font-size: 0.95rem; color: var(--muted-foreground); }
   .cm__ladder ol { padding-left: 1.2rem; }
   .cm__ladder li { line-height: 1.7; }
 </style>
