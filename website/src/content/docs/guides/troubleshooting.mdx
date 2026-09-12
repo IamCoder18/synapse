@@ -55,7 +55,8 @@ Fix the signature; the binding is exactly what the error says.
 
 ## Gradle can't resolve `com.aaravlabs:synapse`
 
-- **401 Unauthorized** — the token is missing `read:packages`, or `githubUser`/`githubToken` are misspelled in `~/.gradle/gradle.properties`.
+- **First, check the source.** The default install is Maven Central and needs no authentication — confirm `mavenCentral()` is in the `repositories {}` of `build.dependencies.gradle` (the FTC template ships it).
+- **401 Unauthorized** — you are resolving through the **GitHub Packages mirror** (see the [GitHub Packages section of the Install guide](/docs/get-started/install#advanced-github-packages-mirror)): the token is missing `read:packages`, or `githubUser`/`githubToken` are misspelled in `~/.gradle/gradle.properties`. On Maven Central this error can't happen — there is no authentication.
 - **Could not resolve** — the `maven { ... }` block landed in the wrong file or block; it belongs in the project `repositories {}` of `build.dependencies.gradle`. See [Install](/docs/get-started/install).
 
 ## The OpMode doesn't appear in the Driver Station list

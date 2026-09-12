@@ -1,6 +1,6 @@
 ---
 title: Install
-description: Add Synapse to your FTC Gradle project in three steps.
+description: Add Synapse to your FTC Gradle project — one dependency, no token.
 ---
 
 # Install
@@ -13,34 +13,88 @@ dependencies {
 }
 ```
 
-> **GitHub Packages?** Synapse is also mirrored on GitHub Packages at
+> **Prefer GitHub Packages?** Synapse is also mirrored on GitHub Packages at
 > `maven.pkg.github.com/IamCoder18/synapse`. That mirror requires a GitHub
 > token with the `read:packages` scope even for public packages — a GitHub
-> restriction, not a Synapse one. The rest of this page walks through that
-> setup, useful if your team already authenticates against GitHub.
+> restriction, not a Synapse one. See the
+> [advanced section](#advanced-github-packages-mirror) at the bottom of this
+> page for the full walkthrough.
 
 ## Prerequisites
 
 - An FTC project built on the standard [`FtcRobotController`](https://github.com/FIRST-Tech-Challenge/FtcRobotController) template (uses `build.dependencies.gradle`).
-- A GitHub account. The token needs only the `read:packages` scope — nothing else.
 - Android Studio with the FTC project already syncing.
 
-## Step 1 — Configure a GitHub token
+## Step 1 — Add the dependency
 
-Create a [personal access token](https://github.com/settings/tokens) with the `read:packages` scope, then put it in `~/.gradle/gradle.properties` (never commit this file):
+Open `build.dependencies.gradle` in your FTC project and add the dependency:
+
+```groovy
+dependencies {
+    implementation 'com.aaravlabs:synapse:0.4.0'
+    // ... your other FTC deps
+}
+```
+
+> **No repository block needed?** Correct — the `FtcRobotController` template ships with `mavenCentral()` and `google()` in its `repositories {}`. If your project removed them, re-add `mavenCentral()` next to `google()`.
+
+> **Using a version catalog or a newer SDK?** The Maven coordinates stay the same (`com.aaravlabs:synapse`) — only the surrounding syntax changes:
+>
+> ```kotlin
+> dependencies {
+>     implementation("com.aaravlabs:synapse:0.4.0")
+> }
+> ```
+
+## Step 2 — Sync and verify
+
+Sync Gradle (the `Sync Now` banner, or the Gradle elephant in Android Studio), then confirm the JAR landed:
+
+```bash
+./gradlew dependencies --configuration debugRuntimeClasspath | grep synapse
+```
+
+You should see `com.aaravlabs:synapse:0.4.0` in the output.
+
+> **Sync fails with "Could not resolve com.aaravlabs:synapse"?**
+> Make sure the dependency is in the project-level `dependencies {}` of `build.dependencies.gradle` (not `buildscript`), and that `mavenCentral()` is present in that file's `repositories {}`.
+
+## R8 / minification
+
+Synapse ships its ProGuard keep rules inside the JAR at `META-INF/proguard/synapse.pro`, so `minifyEnabled` builds work with no extra configuration. The keep rules are exercised in CI by running the full test suite through R8 minification.
+
+## What you get
+
+A ~40 KB JAR with zero runtime dependencies, containing:
+
+- `Orchestrator` — the pub/sub bus and thread owner.
+- The four annotations: `@SubscribedTo`, `@RunPeriodically`, `@RunnableAction`, `@OnHardwareThread`.
+- The FTC layer: `SafeOpMode`, `HardwareActions`, `SafeDevice`, `SafeHardwareMap`, `GamepadAdaptor`.
+
+## Advanced: GitHub Packages mirror
+
+Everything above is the recommended path. Synapse is additionally mirrored on **GitHub Packages** at `maven.pkg.github.com/IamCoder18/synapse`. Use the mirror if your team already authenticates against GitHub — for example because your organization proxies GitHub repositories, or your build pipeline signs in with a GitHub App. If in doubt, stay on Maven Central: it needs no credentials.
+
+GitHub Packages requires authentication for downloads **even though the package is public**. This is a GitHub restriction, not a Synapse one.
+
+### 1 — Configure a GitHub token
+
+Create a [personal access token (classic)](https://github.com/settings/tokens) with the `read:packages` scope — fine-grained tokens are not accepted by GitHub Packages — then put it in `~/.gradle/gradle.properties` (never commit this file):
 
 ```properties
 githubUser=<your-github-username>
 githubToken=<your-token>
 ```
 
-> **Why a token at all?** GitHub Packages requires authenticated downloads even when the package is public. This is a GitHub restriction, not a Synapse one. The token is read-only for packages and never leaves your machine.
+> **Why a token at all?** GitHub Packages requires authenticated downloads even when the package is public. The token lives in your local `gradle.properties` and is only transmitted to `maven.pkg.github.com` over HTTPS when Gradle resolves the dependency; it has no scopes beyond package reads.
+
+> **In a GitHub Actions workflow?** Use the workflow's built-in `GITHUB_TOKEN` with `packages: read` permission instead of a personal token — the snippets below already fall back to the `GITHUB_TOKEN` environment variable.
 
 If you are on a team, each member (and the driver station's build environment) needs their own token in their own `gradle.properties`.
 
-## Step 2 — Add the repository and dependency
+### 2 — Add the repository and dependency
 
-Open `build.dependencies.gradle` in your FTC project and add the repository and the dependency.
+Open `build.dependencies.gradle` in your FTC project and add the mirror repository and the dependency.
 
 **Groovy DSL** (the default FTC template):
 
@@ -87,9 +141,9 @@ dependencies {
 
 > **Using a version catalog or a newer SDK?** The coordinates stay the same — only the surrounding syntax changes. Keep the `maven { ... }` block as-is.
 
-## Step 3 — Sync and verify
+### 3 — Sync and verify
 
-Sync Gradle (the `Sync Now` banner, or the Gradle elephant in Android Studio), then confirm the JAR landed:
+Sync Gradle, then confirm the JAR landed:
 
 ```bash
 ./gradlew dependencies --configuration debugRuntimeClasspath | grep synapse
@@ -105,18 +159,6 @@ You should see `com.aaravlabs:synapse:0.4.0` in the output.
 
 > **Sync fails with "Could not resolve com.aaravlabs:synapse"?**
 > Make sure the `maven { ... }` block is inside `repositories { }` (not `buildscript`), and that the credentials block uses `findProperty` exactly as shown.
-
-## R8 / minification
-
-Synapse ships its ProGuard keep rules inside the JAR at `META-INF/proguard/synapse.pro`, so `minifyEnabled` builds work with no extra configuration. The keep rules are exercised in CI by running the full test suite through R8 minification.
-
-## What you get
-
-A ~40 KB JAR with zero runtime dependencies, containing:
-
-- `Orchestrator` — the pub/sub bus and thread owner.
-- The four annotations: `@SubscribedTo`, `@RunPeriodically`, `@RunnableAction`, `@OnHardwareThread`.
-- The FTC layer: `SafeOpMode`, `HardwareActions`, `SafeDevice`, `SafeHardwareMap`, `GamepadAdaptor`.
 
 ## Next steps
 
