@@ -2,22 +2,43 @@
 import BaseLayout from '~/components/layout/BaseLayout.astro';
 import Nav from '~/components/layout/Nav.astro';
 import Footer from '~/components/layout/Footer.astro';
+import { highlightCode } from '@/lib/highlight';
+import { Badge } from '@/components/ui/badge';
+import { buttonVariants } from '@/components/ui/button';
+import { ArrowRight, BookOpen, Check } from 'lucide-react';
 
-const groovy = `dependencies {
-    implementation 'com.aaravlabs:synapse:0.4.0'
+const VERSION = '0.4.0';
+
+const snippets = [
+  {
+    id: 'groovy',
+    label: 'Gradle — Groovy',
+    file: 'build.dependencies.gradle',
+    code: `dependencies {
+    implementation 'com.aaravlabs:synapse:${VERSION}'
     // ... your other FTC deps
-}`;
+}`,
+  },
+  {
+    id: 'kotlin',
+    label: 'Gradle — Kotlin DSL',
+    file: 'build.dependencies.gradle.kts',
+    code: `dependencies {
+    implementation("com.aaravlabs:synapse:${VERSION}")
+    // ... your other FTC deps
+}`,
+  },
+].map((s) => ({ ...s, html: highlightCode(s.code, s.id as 'groovy' | 'kotlin') }));
 
-const kotlinDsl = `dependencies {
-    implementation("com.aaravlabs:synapse:0.4.0")
-}`;
+const reassurances = [
+  'No token or credentials',
+  'No repository changes',
+  'R8-safe out of the box',
+];
 
-const maven = `<!-- your pom.xml -->
-<dependency>
-    <groupId>com.aaravlabs</groupId>
-    <artifactId>synapse</artifactId>
-    <version>0.4.0</version>
-</dependency>`;
+const gprProps = `# ~/.gradle/gradle.properties (never commit)
+githubUser=<your-github-username>
+githubToken=<a-token-with-read:packages>`;
 
 const gprGroovy = `repositories {
     mavenCentral()
@@ -32,183 +53,297 @@ const gprGroovy = `repositories {
 }
 
 dependencies {
-    implementation 'com.aaravlabs:synapse:0.4.0'
-}`;
-
-const gprKotlinDsl = `repositories {
-    mavenCentral()
-    google()
-    maven {
-        url = uri("https://maven.pkg.github.com/IamCoder18/synapse")
-        credentials {
-            username = (findProperty("githubUser") as String?)
-                ?: System.getenv("GITHUB_USER")
-                ?: System.getenv("GITHUB_ACTOR")
-            password = (findProperty("githubToken") as String?)
-                ?: System.getenv("GITHUB_TOKEN")
-        }
-    }
-}
-
-dependencies {
-    implementation("com.aaravlabs:synapse:0.4.0")
-}`;
-
-const gradleProps = `# ~/.gradle/gradle.properties (never commit)
-githubUser=<your-github-username>
-githubToken=<a-token-with-read:packages>`;
-const proguard = `# Already in the JAR. R8 keeps everything you need.
--keep class com.aaravlabs.synapse.** { *; }
--keep @com.aaravlabs.synapse.annotation.* class *`;
-
-const verify = `import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
-import com.aaravlabs.synapse.ftc.GamepadAdaptor;
-import com.aaravlabs.synapse.ftc.SafeOpMode;
-
-@TeleOp(name = "MyFirstOpMode", group = "Synapse")
-public class MyFirstOpMode extends SafeOpMode {
-    @Override protected void onSafeInit() {
-        // You now have: orchestrator, hardware, safeMap ready.
-        GamepadAdaptor.attach(orchestrator, gamepad1, "g1");
-    }
-    @Override protected void onSafeLoop() {
-        telemetry.update();
-    }
+    implementation 'com.aaravlabs:synapse:${VERSION}'
 }`;
 ---
 <BaseLayout
   title="Install"
-  description="Add Synapse to your FTC Gradle project in three minutes — no token needed."
+  description={`Add Synapse to your FTC robot project with one Gradle line — no token, no repository changes. v${VERSION}, on Maven Central.`}
 >
   <Nav />
-  <main class="install">
-    <header class="install__hero">
-      <h1>Install Synapse</h1>
-      <p>One dependency. No token. Three minutes.</p>
-      <p class="install__hint">
-        Published on <strong>Maven Central</strong> — no authentication and no extra repository
-        needed. Full details and troubleshooting: <a href="/docs/get-started/install">the Install guide</a>.
-      </p>
-    </header>
+  <main class="relative overflow-x-clip" data-install>
+    <div
+      class="grid-bg pointer-events-none absolute inset-x-0 top-0 h-[420px]"
+      aria-hidden="true"
+    >
+    </div>
+    <div
+      class="pointer-events-none absolute -top-32 left-1/2 h-[440px] w-[720px] -translate-x-1/2 rounded-full opacity-60 blur-3xl"
+      style="background: radial-gradient(closest-side, var(--glow-soft), transparent)"
+      aria-hidden="true"
+    >
+    </div>
 
-    <section class="install__step">
-      <h2>1. Add the dependency</h2>
-      <p class="install__hint">
-        The standard FTC template already includes <code>mavenCentral()</code> in its repositories,
-        so the dependency is all you need. Pick your build system:
+    <!-- ================= HERO ================= -->
+    <section class="relative mx-auto max-w-3xl px-6 pt-16 pb-10 text-center sm:pt-20">
+      <Badge
+        variant="outline"
+        className="gap-2 border-primary/40 bg-background px-3 py-1 text-primary shadow-[0_0_16px_-4px_var(--glow-soft)]"
+      >
+        <span class="size-1.5 rounded-full bg-primary shadow-[0_0_8px_var(--glow-soft)]"></span>
+        Maven Central · v{VERSION}
+      </Badge>
+      <h1 class="mt-5 font-display text-4xl font-bold tracking-tight sm:text-5xl">
+        Install Synapse
+      </h1>
+      <p class="mx-auto mt-4 max-w-xl text-lg text-muted-foreground">
+        One line in <code class="font-mono text-[0.9em]">build.dependencies.gradle</code>.
+        Sync. Done.
       </p>
-      <div class="install__tabs">
-        <details open>
-          <summary>Gradle (Groovy)</summary>
-          <pre><code>{groovy}</code></pre>
-        </details>
-        <details>
-          <summary>Gradle (Kotlin DSL)</summary>
-          <pre><code>{kotlinDsl}</code></pre>
-        </details>
-        <details>
-          <summary>Maven</summary>
-          <pre><code>{maven}</code></pre>
-        </details>
+    </section>
+
+    <!-- ================= THE ONE STEP ================= -->
+    <section class="relative mx-auto max-w-3xl px-6">
+      <div class="relative">
+        <div
+          class="pointer-events-none absolute -inset-6 rounded-full opacity-70 blur-3xl"
+          style="background: radial-gradient(closest-side, var(--glow-soft), transparent)"
+          aria-hidden="true"
+        >
+        </div>
+
+        <div
+          class="relative overflow-hidden rounded-xl border border-[#1d2a38] bg-[#0d151f] shadow-xl"
+          data-install-root
+        >
+          <div class="flex items-center gap-2 border-b border-[#1d2a38] bg-[#0a1119] px-4 py-2.5">
+            <span class="size-2.5 rounded-full bg-[#2a3a4c]"></span>
+            <span class="size-2.5 rounded-full bg-[#2a3a4c]"></span>
+            <span class="size-2.5 rounded-full bg-[#34d399]/70"></span>
+            <span class="ml-2 truncate font-mono text-xs text-[#7d92a6]" data-file>
+              {snippets[0].file}
+            </span>
+            <button
+              type="button"
+              class="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-md border border-[#223140] bg-transparent px-2.5 py-1 font-mono text-xs text-[#7d92a6] transition-colors hover:text-[#d7e3f0]"
+              data-copy
+              aria-label="Copy snippet"
+            >
+              <svg class="ico-copy size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect>
+                <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
+              </svg>
+              <svg class="ico-check size-3.5" viewBox="0 0 24 24" fill="none" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M20 6 9 17l-5-5"></path>
+              </svg>
+              <span class="t-idle">Copy</span>
+              <span class="t-done">Copied</span>
+            </button>
+          </div>
+
+          <div class="flex gap-1 overflow-x-auto border-b border-[#1d2a38] bg-[#0a1119] px-3 pt-1.5" role="tablist" aria-label="Build system">
+            {snippets.map((s, i) => (
+              <button
+                type="button"
+                role="tab"
+                id={`tab-${s.id}`}
+                aria-selected={i === 0 ? 'true' : 'false'}
+                aria-controls={`panel-${s.id}`}
+                tabindex={i === 0 ? 0 : -1}
+                data-tab={s.id}
+                data-active={i === 0 ? 'true' : 'false'}
+                class="whitespace-nowrap rounded-t-md border-b-2 px-3.5 py-2 font-mono text-xs transition-colors"
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+
+          {snippets.map((s, i) => (
+            <div
+              class="code-block"
+              id={`panel-${s.id}`}
+              data-panel={s.id}
+              data-active={i === 0 ? 'true' : 'false'}
+              data-file-name={s.file}
+              role="tabpanel"
+              aria-labelledby={`tab-${s.id}`}
+              set:html={s.html}
+            />
+          ))}
+        </div>
+      </div>
+
+      <p class="mt-5 text-center text-sm text-muted-foreground">
+        Paste it in, then hit <strong class="font-medium text-foreground">Sync Now</strong> in
+        Android Studio. That's the whole install.
+      </p>
+
+      <ul
+        class="mx-auto mt-8 flex max-w-2xl flex-wrap items-center justify-center gap-x-8 gap-y-2 text-sm text-muted-foreground"
+        role="list"
+      >
+        {reassurances.map((t) => (
+          <li class="flex items-center gap-2">
+            <Check className="size-4 text-chart-3" aria-hidden="true" />
+            {t}
+          </li>
+        ))}
+      </ul>
+
+      <div class="mt-10 flex flex-wrap items-center justify-center gap-3">
+        <a href="/docs/get-started/first-opmode" class={buttonVariants({ size: 'lg' })}>
+          Write your first OpMode <ArrowRight className="size-4" />
+        </a>
+        <a
+          href="/docs/get-started/install"
+          class={buttonVariants({ size: 'lg', variant: 'outline' })}
+        >
+          <BookOpen className="size-4" /> Install guide &amp; troubleshooting
+        </a>
       </div>
     </section>
 
-    <section class="install__step">
-      <h2>2. R8 / ProGuard keep rules</h2>
-      <p class="install__hint">
-        Synapse already ships keep rules in <code>META-INF/proguard/synapse.pro</code>, so minification
-        is safe out of the box. You don't need to copy anything — but if you use a custom rules file,
-        add the lines below to be explicit:
-      </p>
-      <pre><code>{proguard}</code></pre>
-    </section>
-
-    <section class="install__step">
-      <h2>3. Extend SafeOpMode</h2>
-      <p class="install__hint">
-        Replace <code>extends OpMode</code> with <code>extends SafeOpMode</code> in your OpMode class.
-        The base class wires the orchestrator, hardware thread, and a SafeHardwareMap for you.
-      </p>
-      <pre><code>{verify}</code></pre>
-    </section>
-
-    <section class="install__step">
-      <h2>4. Verify it works</h2>
-      <p class="install__hint">
-        Build and run the OpMode above. You should see no errors in logcat and the standard "INIT" →
-        "RUN" → "STOP" lifecycle messages from the FTC SDK. If you also see lines like
-        <code>created topic ...</code> or <code>registered node ...</code>, the orchestrator is alive.
-      </p>
-    </section>
-
-    <section class="install__step">
-      <h2>5. Optional: enable GamepadAdaptor</h2>
-      <p class="install__hint">
-        Add this single line inside <code>onSafeInit()</code> to publish every gamepad field as a topic:
-      </p>
-      <pre><code>GamepadAdaptor.attach(orchestrator, gamepad1, "g1");</code></pre>
-      <p class="install__hint">
-        See <a href="/docs/ftc/gamepad-adaptor">GamepadAdaptor</a> for the full topic map.
-      </p>
-    </section>
-
-    <section class="install__step">
-      <h2>6. Advanced: GitHub Packages mirror</h2>
-      <p class="install__hint">
-        Synapse is also mirrored on <code>maven.pkg.github.com/IamCoder18/synapse</code> — useful if
-        your organization already authenticates against GitHub. The mirror requires a personal
-        access token with the <code>read:packages</code> scope even for public packages (a GitHub
-        restriction, not a Synapse one). If in doubt, stay on Maven Central above.
-      </p>
-      <div class="install__tabs">
-        <details>
-          <summary>Use the GitHub Packages mirror</summary>
-          <p class="install__hint">
-            Create a personal access token <strong>(classic)</strong> with the <code>read:packages</code>
-            scope — fine-grained tokens are not accepted by GitHub Packages — then put it in
-            <code>~/.gradle/gradle.properties</code> (never commit this file):
+    <!-- ================= ALTERNATIVE MIRROR ================= -->
+    <section class="relative mx-auto max-w-3xl px-6 pb-24 pt-14">
+      <details class="group rounded-xl border border-border bg-card">
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 text-sm font-medium [&::-webkit-details-marker]:hidden">
+          <span>Alternative: GitHub Packages mirror</span>
+          <svg class="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="m6 9 6 6 6-6"></path>
+          </svg>
+        </summary>
+        <div class="border-t border-border px-5 py-5">
+          <p class="text-sm text-muted-foreground">
+            Synapse is also mirrored on GitHub Packages for teams that already authenticate
+            against GitHub. It requires a personal access token with the
+            <code class="rounded bg-muted px-1.5 py-0.5 font-mono text-[0.85em]">read:packages</code>
+            scope — even for public packages, a GitHub restriction. If in doubt, use Maven
+            Central above.
           </p>
-          <pre><code>{gradleProps}</code></pre>
-          <p class="install__hint">Add the mirror repository and the dependency:</p>
-          <pre><code>{gprGroovy}</code></pre>
-          <p class="install__hint">Kotlin DSL:</p>
-          <pre><code>{gprKotlinDsl}</code></pre>
-          <p class="install__hint">
-            Full walkthrough with troubleshooting: <a href="/docs/get-started/install#advanced-github-packages-mirror">the Install guide's GitHub Packages section</a>.
+          <p class="mt-5 mb-2 font-mono text-xs text-muted-foreground">
+            ~/.gradle/gradle.properties — never commit this file
           </p>
-        </details>
-      </div>
+          <div class="overflow-hidden rounded-lg border border-[#1d2a38]">
+            <div class="code-block" set:html={highlightCode(gprProps, 'properties')} />
+          </div>
+          <p class="mt-5 mb-2 font-mono text-xs text-muted-foreground">build.dependencies.gradle</p>
+          <div class="overflow-hidden rounded-lg border border-[#1d2a38]">
+            <div class="code-block" set:html={highlightCode(gprGroovy, 'groovy')} />
+          </div>
+          <p class="mt-5 text-sm">
+            <a
+              href="/docs/get-started/install#advanced-github-packages-mirror"
+              class="font-medium text-primary underline-offset-4 hover:underline"
+            >
+              Kotlin DSL version and troubleshooting in the Install guide
+            </a>
+          </p>
+        </div>
+      </details>
     </section>
   </main>
   <Footer />
 </BaseLayout>
 
 <style>
-  .install { max-width: 880px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
-  .install a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
-  .install__hero { text-align: center; margin-bottom: 3rem; }
-  .install__hero h1 { font-size: clamp(2.4rem, 6vw, 3.4rem); margin: 0; }
-  .install__hero p { color: var(--muted-foreground); margin-top: 0.7rem; }
-  .install__step { margin-bottom: 2.5rem; }
-  .install__step h2 { font-size: 1.4rem; margin: 0 0 0.5rem; }
-  .install__hint { color: var(--muted-foreground); margin-bottom: 0.9rem; }
-  pre { background: var(--muted); border: 1px solid var(--border); padding: 1rem; border-radius: 8px; overflow: auto; }
-  code { font-family: var(--font-mono); font-size: 0.9em; }
-  p code, h2 code, li code { background: var(--muted); padding: 0.15em 0.4em; border-radius: 4px; }
-  pre code { background: transparent; padding: 0; }
-  .install__tabs details {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    margin-bottom: 0.5rem;
-    overflow: hidden;
+  [data-install-root] [data-tab] {
+    color: #7d92a6;
   }
-  .install__tabs summary {
-    padding: 0.7rem 1rem;
-    cursor: pointer;
-    color: var(--foreground);
-    font-weight: 500;
+  [data-install-root] [data-tab][data-active='true'] {
+    color: #67e8f9;
+    background: #0d151f;
+    border-color: #22d3ee;
   }
-  .install__tabs summary:hover { background: var(--muted); }
-  .install__tabs pre { border: none; border-top: 1px solid var(--border); border-radius: 0; margin: 0; }
+  [data-install-root] [data-tab]:not([data-active='true']):hover {
+    color: #d7e3f0;
+  }
+  [data-install-root] [data-panel] {
+    display: none;
+  }
+  [data-install-root] [data-panel][data-active='true'] {
+    display: block;
+  }
+  [data-install-root] [data-copy] .ico-check,
+  [data-install-root] [data-copy] .t-done {
+    display: none;
+  }
+  [data-install-root] [data-copy][data-state='copied'] .ico-copy,
+  [data-install-root] [data-copy][data-state='copied'] .t-idle {
+    display: none;
+  }
+  [data-install-root] [data-copy][data-state='copied'] .ico-check {
+    display: block;
+  }
+  [data-install-root] [data-copy][data-state='copied'] .t-done {
+    display: inline;
+    color: #34d399;
+  }
+  [data-install-root] [data-copy][data-state='error'] {
+    color: #f87171;
+  }
 </style>
+
+<script>
+  const initInstall = () => {
+    const root = document.querySelector<HTMLElement>('[data-install]');
+    const panelRoot = document.querySelector<HTMLElement>('[data-install-root]');
+    if (!root || !panelRoot || panelRoot.dataset.ready === 'true') return;
+    panelRoot.dataset.ready = 'true';
+
+    const tabs = Array.from(panelRoot.querySelectorAll<HTMLButtonElement>('[data-tab]'));
+    const panels = Array.from(panelRoot.querySelectorAll<HTMLElement>('[data-panel]'));
+    const file = panelRoot.querySelector<HTMLElement>('[data-file]');
+    const copyBtn = panelRoot.querySelector<HTMLButtonElement>('[data-copy]');
+
+    const activeTab = () => tabs.find((t) => t.dataset.active === 'true') ?? tabs[0];
+
+    const select = (tab: HTMLButtonElement, focus = false) => {
+      for (const t of tabs) {
+        const on = t === tab;
+        t.dataset.active = String(on);
+        t.setAttribute('aria-selected', String(on));
+        t.tabIndex = on ? 0 : -1;
+      }
+      for (const p of panels) p.dataset.active = String(p.dataset.panel === tab.dataset.tab);
+      const panel = panels.find((p) => p.dataset.panel === tab.dataset.tab);
+      if (file && panel?.dataset.fileName) file.textContent = panel.dataset.fileName;
+      if (focus) tab.focus();
+    };
+
+    for (const tab of tabs) {
+      tab.addEventListener('click', () => {
+        if (tab.dataset.active !== 'true') select(tab);
+      });
+      tab.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+        e.preventDefault();
+        const dir = e.key === 'ArrowRight' ? 1 : -1;
+        const next = tabs[(tabs.indexOf(tab) + dir + tabs.length) % tabs.length];
+        select(next, true);
+      });
+    }
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    copyBtn?.addEventListener('click', async () => {
+      const tab = activeTab();
+      const panel = panels.find((p) => p.dataset.panel === tab?.dataset.tab);
+      if (!panel) return;
+      try {
+        await navigator.clipboard.writeText((panel.textContent ?? '').trim());
+        copyBtn.dataset.state = 'copied';
+        copyBtn.setAttribute('aria-label', 'Copied');
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+          copyBtn.dataset.state = '';
+          copyBtn.setAttribute('aria-label', 'Copy snippet');
+          timer = null;
+        }, 1600);
+      } catch {
+        copyBtn.dataset.state = 'error';
+        copyBtn.setAttribute('aria-label', 'Copy failed — select the snippet and copy manually');
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+          copyBtn.dataset.state = '';
+          copyBtn.setAttribute('aria-label', 'Copy snippet');
+          timer = null;
+        }, 2400);
+      }
+    });
+  };
+
+  document.addEventListener('astro:page-load', initInstall);
+  // Fallback for the very first load if the client router is unavailable.
+  if (document.readyState !== 'loading') initInstall();
+  else document.addEventListener('DOMContentLoaded', initInstall);
+</script>
