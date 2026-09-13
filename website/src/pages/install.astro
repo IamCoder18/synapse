@@ -329,9 +329,24 @@ dependencies {
     }
 
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let announceTimer: ReturnType<typeof setTimeout> | null = null;
     const copyStatus = panelRoot.querySelector<HTMLElement>('[data-copy-status]');
     const announce = (msg: string) => {
-      if (copyStatus) copyStatus.textContent = msg;
+      if (!copyStatus) return;
+      if (announceTimer) {
+        clearTimeout(announceTimer);
+        announceTimer = null;
+      }
+      if (copyStatus.textContent === msg) {
+        // aria-live does not re-announce identical text; force a change first.
+        copyStatus.textContent = '';
+        announceTimer = setTimeout(() => {
+          if (copyStatus) copyStatus.textContent = msg;
+          announceTimer = null;
+        }, 50);
+      } else {
+        copyStatus.textContent = msg;
+      }
     };
     const scheduleReset = (delay: number) => {
       if (timer) clearTimeout(timer);
