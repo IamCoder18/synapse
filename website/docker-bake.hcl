@@ -1,4 +1,5 @@
-# Build targets consumed by docker/bake-action (see .github/workflows/docker.yml).
+# Build targets consumed by docker/bake-action (see .github/workflows/
+# docker.yml for push/tag publishes and docker-pr.yml for PR builds).
 # Defining the build here keeps the Dockerfile, tags, cache config, and
 # platform declarations in one file under the website/ source tree.
 #

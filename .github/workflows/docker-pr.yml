@@ -1,0 +1,67 @@
+name: Docker image (PR)
+
+# Default permissions are least-privilege; no job needs elevated access.
+# This satisfies zizmor's excessive-permissions check.
+permissions:
+  contents: read
+
+# A newer push to the PR cancels any older build that is still running.
+concurrency:
+  group: docker-image-${{ github.ref }}
+  cancel-in-progress: true
+
+# Validation-only builds for pull requests: each platform builds natively on
+# its own runner, without logging in to GHCR or pushing. Publishing lives in
+# docker.yml.
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-amd64:
+    name: Build image (amd64)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Build
+        uses: docker/bake-action@76cc8060bdff6d632a465001e4cf300684c5472c # v5.7.0
+        with:
+          files: |
+            website/docker-bake.hcl
+          # Use the dedicated PR target, which omits `cache-to` because
+          # fork PRs lack permission to write to the GHA cache.
+          targets: synapse-website-pr
+          set: |
+            *.platform=linux/amd64
+
+  build-arm64:
+    name: Build image (arm64)
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+      - name: Build
+        uses: docker/bake-action@76cc8060bdff6d632a465001e4cf300684c5472c # v5.7.0
+        with:
+          files: |
+            website/docker-bake.hcl
+          targets: synapse-website-pr
+          set: |
+            *.platform=linux/arm64
