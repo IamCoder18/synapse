@@ -1,5 +1,6 @@
 ---
 import BaseLayout from '~/components/layout/BaseLayout.astro';
+import Logo from '~/components/layout/Logo.astro';
 
 import { highlightJava } from '@/lib/highlight';
 import { QUICKSTART_CODE, PUBSUB_CODE, HARDWARE_CODE } from '@/lib/code-samples';
@@ -159,10 +160,7 @@ const footerCols = [
     >
       <div class="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         <a href="/" class="flex items-center gap-2.5">
-          <span class="relative flex size-8 items-center justify-center rounded-lg bg-primary/15">
-            <span class="absolute size-2.5 rounded-full bg-primary shadow-[0_0_12px_var(--glow-soft)]"></span>
-            <span class="absolute size-5 rounded-full border border-primary/40"></span>
-          </span>
+          <Logo size={28} />
           <span class="font-display text-lg font-semibold tracking-tight">Synapse</span>
           <span
             class="ml-1 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 font-mono text-[10px] font-medium text-primary shadow-[0_0_14px_-2px_var(--glow-soft)]"
