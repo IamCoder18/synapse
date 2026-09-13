@@ -23,11 +23,13 @@ on:
 env:
   REGISTRY: ghcr.io
   # github.repository_owner preserves the owner's display case (e.g.
-  # `IamCoder18`). GHCR resolves package lookups case-insensitively at the
-  # storage layer, so `ghcr.io/IamCoder18/synapse-website` and
-  # `ghcr.io/iamcoder18/synapse-website` point at the same package — we use
-  # the lowercase spelling in the docker-compose files purely for
-  # readability.
+  # `IamCoder18`), but OCI registry repository names must be lowercase —
+  # buildx rejects `ghcr.io/IamCoder18/...` with "repository name must be
+  # lowercase". metadata-action lowercases its own outputs, but the bare
+  # name referenced by the digest pushes goes through a --set override that
+  # bypasses it, so each job derives the lowercased IMAGE in a prepare step
+  # and uses it everywhere. The docker-compose files already use the
+  # lowercase spelling; GHCR serves the same package either way.
   IMAGE_NAME: ${{ github.repository_owner }}/synapse-website
 
 # Each platform is built natively on its own runner (arm64 on GitHub's free
@@ -52,6 +54,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Prepare image name
+        env:
+          SOURCE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        run: |
+          echo "IMAGE=${SOURCE,,}" >> "$GITHUB_ENV"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
@@ -66,7 +74,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.IMAGE }}
           # The computed tags are only applied by the merge job; this step
           # exists so its OCI labels get baked into the pushed image.
           tags: |
@@ -92,7 +100,7 @@ jobs:
           targets: synapse-website
           set: |
             *.platform=linux/amd64
-            *.tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            *.tags=${{ env.IMAGE }}
             *.output=type=image,push-by-digest=true,name-canonical=true,push=true
 
       - name: Record pushed digest
@@ -121,6 +129,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Prepare image name
+        env:
+          SOURCE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        run: |
+          echo "IMAGE=${SOURCE,,}" >> "$GITHUB_ENV"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
 
@@ -135,7 +149,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
@@ -154,7 +168,7 @@ jobs:
           targets: synapse-website
           set: |
             *.platform=linux/arm64
-            *.tags=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+            *.tags=${{ env.IMAGE }}
             *.output=type=image,push-by-digest=true,name-canonical=true,push=true
 
       - name: Record pushed digest
@@ -191,7 +205,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.IMAGE }}
           tags: |
             type=ref,event=branch
             type=semver,pattern={{version}}
@@ -201,7 +215,7 @@ jobs:
 
       - name: Create multi-arch manifest list and push
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          IMAGE: ${{ env.IMAGE }}
           AMD64_DIGEST: ${{ needs.build-amd64.outputs.digest }}
           ARM64_DIGEST: ${{ needs.build-arm64.outputs.digest }}
         run: |
@@ -214,7 +228,7 @@ jobs:
 
       - name: Inspect image
         env:
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          IMAGE: ${{ env.IMAGE }}
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
           # version is the branch name on main pushes and the semver on tag
