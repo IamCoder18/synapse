@@ -8,7 +8,7 @@
   <rect width="32" height="32" rx="6" fill="#0A0F14"/>
   <circle cx="8" cy="16" r="3.5" fill="#61EBFA"/>
   <circle cx="24" cy="16" r="3.5" fill="#6FE4BF"/>
-  <path d="M8 16 Q 16 6 24 16" stroke="url(#g)" stroke-width="2" fill="none" stroke-linecap="round">
+  <path d="M8 16 Q 16 6 24 16" stroke="url(#g)" stroke-width="1.6" fill="none" stroke-linecap="round">
     <animate attributeName="d" dur="2.4s" repeatCount="indefinite"
       values="M8 16 Q 16 6 24 16; M8 16 Q 16 26 24 16; M8 16 Q 16 6 24 16"/>
   </path>
