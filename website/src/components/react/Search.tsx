@@ -45,22 +45,34 @@ export default function Search() {
       setHits([]);
       return;
     }
-    try {
-      const res = search(db, {
-        term: query,
-        properties: ['title', 'description', 'content'],
-      });
-      if (res instanceof Promise) return;
+    let cancelled = false;
+    const apply = (res: any) =>
       setHits(
-        (res.hits ?? []).slice(0, 8).map((h: any) => ({
+        (res?.hits ?? []).slice(0, 8).map((h: any) => ({
           url: h.document.url,
           title: h.document.title,
           description: h.document.description,
         })),
       );
+    try {
+      Promise.resolve(
+        search(db, {
+          term: query,
+          properties: ['title', 'description', 'content'],
+        }),
+      )
+        .then((res) => {
+          if (!cancelled) apply(res);
+        })
+        .catch(() => {
+          if (!cancelled) setHits([]);
+        });
     } catch {
       setHits([]);
     }
+    return () => {
+      cancelled = true;
+    };
   }, [query, db]);
 
   return (
