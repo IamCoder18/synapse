@@ -1,98 +1,67 @@
 ---
-import BaseLayout from '~/components/layout/BaseLayout.astro';
-import Nav from '~/components/layout/Nav.astro';
-import Footer from '~/components/layout/Footer.astro';
+import DocsLayout from '~/components/layout/DocsLayout.astro';
 import { getCollection } from 'astro:content';
 import { docsUrlFromId } from '~/lib/source';
+import { GROUP_ORDER, GROUP_TITLES, type DocsGroup } from '~/lib/docs';
 
 const all = await getCollection('docs');
-const groups: Record<string, { id: string; title: string; description?: string }[]> = {};
+
+const groups: Record<string, DocsGroup[]> = {};
 for (const e of all) {
   const url = docsUrlFromId(e.id);
   if (!url) continue;
   const top = url.split('/')[2];
   if (!top) continue;
   groups[top] ??= [];
-  groups[top].push({ id: e.id, title: e.data.title ?? e.id, description: e.data.description });
+  groups[top].push({
+    id: e.id,
+    title: e.data.title ?? e.id,
+    description: e.data.description,
+    url,
+  });
 }
-const groupOrder = ['get-started', 'concepts', 'annotations', 'ftc', 'recipes', 'guides', 'api'];
-const groupTitles: Record<string, string> = {
-  'get-started': 'Get Started',
-  concepts: 'Concepts',
-  annotations: 'Annotations',
-  ftc: 'FTC Integration',
-  recipes: 'Recipes',
-  guides: 'Guides',
-  api: 'API Reference',
-};
 ---
-<BaseLayout title="Docs" description="The full guide to using Synapse for FTC robot code.">
-  <Nav />
-  <main class="docs-shell docs-shell--index">
-    <article class="docs-article">
-      <h1>Synapse Docs</h1>
-      <p>Welcome. Synapse is a tiny pub/sub bus that gives FTC robot code a single dedicated hardware thread and typed topics for inter-module communication.</p>
 
-      <h2>60-second tour</h2>
-      <ol>
-        <li>Add the dependency (see <a href="/docs/get-started/install">Install</a>).</li>
-        <li>Extend <code>SafeOpMode</code> instead of <code>OpMode</code>.</li>
-        <li>Build <code>Node</code>s — one concern each (drive, intake, shooter).</li>
-        <li>Use <code>@SubscribedTo</code>, <code>@RunPeriodically</code>, <code>@RunnableAction</code> to wire them up.</li>
-        <li>Anything that touches a <code>DcMotorEx</code> / <code>Servo</code> / <code>IMU</code> runs on the hardware thread — read <a href="/docs/concepts/architecture">Architecture</a> to see how.</li>
-      </ol>
+<DocsLayout
+  title="Docs"
+  description="The full guide to using Synapse for FTC robot code."
+  groups={groups}
+  groupOrder={GROUP_ORDER}
+  groupTitles={GROUP_TITLES}
+  currentSlug=""
+  variant="index"
+>
+  <p>Welcome. Synapse is a tiny pub/sub bus that gives FTC robot code a single dedicated hardware thread and typed topics for inter-module communication.</p>
 
-      {groupOrder.map((g) => {
-        const items = groups[g];
-        if (!items) return null;
-        return (
-        <section class="docs-section">
-          <h2>{groupTitles[g] ?? g}</h2>
-          <ul role="list" class="docs-section__list">
-            {items.map((i) => {
-              const url = docsUrlFromId(i.id);
-              if (!url) return null;
-              return (
-                <li>
-                  <a href={url}>
-                    <strong>{i.title}</strong>
-                    {i.description && <span>{i.description}</span>}
-                  </a>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-        );
-      })}
+  <h2>60-second tour</h2>
+  <ol>
+    <li>Add the dependency (see <a href="/docs/get-started/install">Install</a>).</li>
+    <li>Extend <code>SafeOpMode</code> instead of <code>OpMode</code>.</li>
+    <li>Build <code>Node</code>s — one concern each (drive, intake, shooter).</li>
+    <li>Use <code>@SubscribedTo</code>, <code>@RunPeriodically</code>, <code>@RunnableAction</code> to wire them up.</li>
+    <li>Anything that touches a <code>DcMotorEx</code> / <code>Servo</code> / <code>IMU</code> runs on the hardware thread — read <a href="/docs/concepts/architecture">Architecture</a> to see how.</li>
+  </ol>
 
-      <h2>For LLMs and agents</h2>
-      <p>Every page is also served as Markdown. See <a href="/llms.txt">llms.txt</a>, <a href="/llms-full.txt">llms-full.txt</a>, and <a href="/docs.md">docs.md</a> at the site root, or append <code>.md</code> to any docs URL.</p>
-    </article>
-  </main>
-  <Footer />
+  {GROUP_ORDER.map((g) => {
+    const items = groups[g];
+    if (!items) return null;
+    return (
+      <section class="docs-section">
+        <h2>{GROUP_TITLES[g] ?? g}</h2>
+        <ul role="list" class="docs-section__list">
+          {items.map((i) => (
+            <li>
+              <a href={i.url}>
+                <strong>{i.title}</strong>
+                {i.description && <span>{i.description}</span>}
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    );
+  })}
 
-  <style>
-    .docs-shell--index { grid-template-columns: 1fr; max-width: 900px; }
-    .docs-article { max-width: 760px; }
-    .docs-article :global(h1) { font-size: 2.4rem; margin-top: 0; }
-    .docs-article :global(h2) { margin-top: 2.5rem; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
-    .docs-article :global(p), .docs-article :global(li) { line-height: 1.7; }
-    .docs-article :global(a) { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
-    .docs-article :global(code) {
-      font-family: var(--font-mono);
-      font-size: 0.9em;
-      background: var(--muted);
-      padding: 0.15em 0.4em;
-      border-radius: 4px;
-    }
-    .docs-section__list { list-style: none; padding: 0; display: grid; gap: 0.5rem; }
-    .docs-section__list a {
-      display: block; padding: 0.7rem 0.9rem; border-radius: 8px;
-      background: var(--card); border: 1px solid var(--border);
-      color: var(--foreground); text-decoration: none;
-    }
-    .docs-section__list a:hover { border-color: var(--primary); }
-    .docs-section__list a span { display: block; color: var(--muted-foreground); font-size: 0.85rem; margin-top: 0.2rem; }
-  </style>
-</BaseLayout>
+  <h2>For LLMs and agents</h2>
+  <p>Every page is also served as Markdown. See <a href="/llms.txt">llms.txt</a>, <a href="/llms-full.txt">llms-full.txt</a>, and <a href="/docs.md">docs.md</a> at the site root, or append <code>.md</code> to any docs URL.</p>
+</DocsLayout>

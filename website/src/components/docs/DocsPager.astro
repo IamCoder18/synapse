@@ -1,0 +1,37 @@
+---
+import type { DocsPagerLink } from '~/lib/docs';
+
+export interface Props {
+  prev?: DocsPagerLink;
+  next?: DocsPagerLink;
+}
+
+const { prev, next } = Astro.props;
+---
+
+{(prev || next) && (
+  <nav class="docs-pager" aria-label="Page navigation">
+    {prev ? (
+      <a class="docs-pager__link docs-pager__link--prev" href={prev.url} rel="prev">
+        <span class="docs-pager__direction">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M15 18l-6-6 6-6"/>
+          </svg>
+          Previous
+        </span>
+        <span class="docs-pager__title">{prev.title}</span>
+      </a>
+    ) : <span></span>}
+    {next ? (
+      <a class="docs-pager__link docs-pager__link--next" href={next.url} rel="next">
+        <span class="docs-pager__direction">
+          Next
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 18l6-6-6-6"/>
+          </svg>
+        </span>
+        <span class="docs-pager__title">{next.title}</span>
+      </a>
+    ) : <span></span>}
+  </nav>
+)}
