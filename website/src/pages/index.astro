@@ -3,6 +3,7 @@ import BaseLayout from '~/components/layout/BaseLayout.astro';
 
 import { highlightJava } from '@/lib/highlight';
 import { QUICKSTART_CODE, PUBSUB_CODE, HARDWARE_CODE } from '@/lib/code-samples';
+import { latestVersion } from '@/lib/changelog';
 
 import { Badge } from '@/components/ui/badge';
 import {
@@ -103,7 +104,7 @@ const pools = [
 
 const REPO = 'https://github.com/IamCoder18/synapse';
 
-const VERSION = '0.4.0';
+const VERSION = latestVersion();
 const DESCRIPTION =
   'A tiny, annotation-driven pub/sub bus for FTC robot code. 40 KB. Zero dependencies. One hardware thread.';
 

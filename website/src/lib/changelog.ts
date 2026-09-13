@@ -87,3 +87,9 @@ export function loadChangelog(): ChangelogRelease[] {
   const md = readFileSync(file, 'utf8');
   return parseChangelog(md);
 }
+
+export function latestVersion(): string {
+  const latest = loadChangelog().find((r) => r.isLatest);
+  if (!latest?.version) throw new Error('CHANGELOG.md has no stable release entry');
+  return latest.version;
+}
