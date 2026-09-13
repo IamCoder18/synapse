@@ -135,6 +135,7 @@ dependencies {
               <span class="t-idle">Copy</span>
               <span class="t-done">Copied</span>
             </button>
+            <span class="sr-only" role="status" aria-live="polite" data-copy-status></span>
           </div>
 
           <div class="flex gap-1 overflow-x-auto border-b border-[#1d2a38] bg-[#0a1119] px-3 pt-1.5" role="tablist" aria-label="Build system">
@@ -163,6 +164,7 @@ dependencies {
               data-active={i === 0 ? 'true' : 'false'}
               data-file-name={s.file}
               role="tabpanel"
+              tabindex="0"
               aria-labelledby={`tab-${s.id}`}
               set:html={highlightCode(s.code, s.id)}
             />
@@ -327,6 +329,19 @@ dependencies {
     }
 
     let timer: ReturnType<typeof setTimeout> | null = null;
+    const copyStatus = panelRoot.querySelector<HTMLElement>('[data-copy-status]');
+    const announce = (msg: string) => {
+      if (copyStatus) copyStatus.textContent = msg;
+    };
+    const scheduleReset = (delay: number) => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        copyBtn.dataset.state = '';
+        copyBtn.setAttribute('aria-label', 'Copy snippet');
+        announce('');
+        timer = null;
+      }, delay);
+    };
     copyBtn?.addEventListener('click', async () => {
       const tab = activeTab();
       const panel = panels.find((p) => p.dataset.panel === tab?.dataset.tab);
@@ -335,21 +350,13 @@ dependencies {
         await navigator.clipboard.writeText((panel.textContent ?? '').trim());
         copyBtn.dataset.state = 'copied';
         copyBtn.setAttribute('aria-label', 'Copied');
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-          copyBtn.dataset.state = '';
-          copyBtn.setAttribute('aria-label', 'Copy snippet');
-          timer = null;
-        }, 1600);
+        announce('Copied to clipboard');
+        scheduleReset(1600);
       } catch {
         copyBtn.dataset.state = 'error';
         copyBtn.setAttribute('aria-label', 'Copy failed — select the snippet and copy manually');
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(() => {
-          copyBtn.dataset.state = '';
-          copyBtn.setAttribute('aria-label', 'Copy snippet');
-          timer = null;
-        }, 2400);
+        announce('Copy failed — select the snippet and copy manually');
+        scheduleReset(2400);
       }
     });
   };
