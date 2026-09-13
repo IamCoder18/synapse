@@ -41,13 +41,12 @@ for (const s of all) {
   });
 }
 
-const flatOrder: DocsPagerLink[] = all
-  .map((s) => {
-    const u = docsUrlFromId(s.id);
-    if (!u) return null;
-    return { url: u, title: s.data.title ?? s.id };
-  })
-  .filter((x): x is DocsPagerLink => x !== null);
+const flatOrder: DocsPagerLink[] = [];
+for (const g of GROUP_ORDER) {
+  for (const item of groups[g] ?? []) {
+    flatOrder.push({ url: item.url, title: item.title });
+  }
+}
 ---
 
 <DocsLayout
@@ -67,6 +66,7 @@ const flatOrder: DocsPagerLink[] = all
   groupOrder={GROUP_ORDER}
   groupTitles={GROUP_TITLES}
   currentSlug={slug}
+  sourcePath={entry.id}
   flatOrder={flatOrder}
   headings={headings}
   variant="article"

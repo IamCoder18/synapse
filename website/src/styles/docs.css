@@ -230,11 +230,11 @@
   color: var(--foreground);
 }
 
-.docs-article__body :global(p) {
+.docs-article__body p {
   margin: 0 0 1.05rem;
 }
 
-.docs-article__body :global(a) {
+.docs-article__body a {
   color: var(--primary);
   text-decoration: underline;
   text-underline-offset: 3px;
@@ -243,21 +243,21 @@
   transition: text-decoration-color 0.15s ease, color 0.15s ease;
 }
 
-.docs-article__body :global(a:hover) {
+.docs-article__body a:hover {
   text-decoration-color: var(--primary);
 }
 
 /* headings */
-.docs-article__body :global(h2),
-.docs-article__body :global(h3),
-.docs-article__body :global(h4) {
+.docs-article__body h2,
+.docs-article__body h3,
+.docs-article__body h4 {
   font-family: var(--font-display);
   scroll-margin-top: 6rem;
   color: var(--foreground);
   letter-spacing: -0.01em;
 }
 
-.docs-article__body :global(h2) {
+.docs-article__body h2 {
   font-size: 1.5rem;
   font-weight: 700;
   line-height: 1.25;
@@ -266,14 +266,14 @@
   border-bottom: 1px solid var(--border);
 }
 
-.docs-article__body :global(h3) {
+.docs-article__body h3 {
   font-size: 1.18rem;
   font-weight: 600;
   line-height: 1.35;
   margin: 2rem 0 0.75rem;
 }
 
-.docs-article__body :global(h4) {
+.docs-article__body h4 {
   font-size: 1rem;
   font-weight: 600;
   line-height: 1.4;
@@ -284,30 +284,30 @@
 }
 
 /* lists */
-.docs-article__body :global(ul),
-.docs-article__body :global(ol) {
+.docs-article__body ul,
+.docs-article__body ol {
   margin: 0 0 1.1rem;
   padding-left: 1.4rem;
 }
 
-.docs-article__body :global(ul) { list-style: disc; }
-.docs-article__body :global(ol) { list-style: decimal; }
+.docs-article__body ul { list-style: disc; }
+.docs-article__body ol { list-style: decimal; }
 
-.docs-article__body :global(li) {
+.docs-article__body li {
   margin: 0.3rem 0;
 }
 
-.docs-article__body :global(li > ul),
-.docs-article__body :global(li > ol) {
+.docs-article__body li > ul,
+.docs-article__body li > ol {
   margin: 0.3rem 0;
 }
 
-.docs-article__body :global(li::marker) {
+.docs-article__body li::marker {
   color: var(--muted-foreground);
 }
 
 /* inline code */
-.docs-article__body :global(code) {
+.docs-article__body code {
   font-family: var(--font-mono);
   font-size: 0.88em;
   background: color-mix(in oklab, var(--muted) 80%, transparent);
@@ -318,7 +318,7 @@
 }
 
 /* code blocks */
-.docs-article__body :global(pre) {
+.docs-article__body pre {
   margin: 1.4rem 0;
   padding: 1.05rem 1.2rem;
   background: oklch(0.18 0.025 248);
@@ -331,7 +331,7 @@
               0 12px 32px -16px color-mix(in oklab, var(--foreground) 18%, transparent);
 }
 
-.docs-article__body :global(pre code) {
+.docs-article__body pre code {
   background: transparent;
   border: none;
   padding: 0;
@@ -340,7 +340,7 @@
 }
 
 /* blockquotes — treated as callouts */
-.docs-article__body :global(blockquote) {
+.docs-article__body blockquote {
   position: relative;
   margin: 1.4rem 0;
   padding: 0.9rem 1.1rem 0.9rem 1.25rem;
@@ -350,12 +350,12 @@
   color: var(--foreground);
 }
 
-.docs-article__body :global(blockquote p) { margin: 0; }
-.docs-article__body :global(blockquote p + p) { margin-top: 0.6rem; }
-.docs-article__body :global(blockquote :last-child) { margin-bottom: 0; }
+.docs-article__body blockquote p { margin: 0; }
+.docs-article__body blockquote p + p { margin-top: 0.6rem; }
+.docs-article__body blockquote :last-child { margin-bottom: 0; }
 
 /* tables */
-.docs-article__body :global(table) {
+.docs-article__body table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
@@ -366,17 +366,17 @@
   overflow: hidden;
 }
 
-.docs-article__body :global(thead) { background: var(--muted); }
+.docs-article__body thead { background: var(--muted); }
 
-.docs-article__body :global(th),
-.docs-article__body :global(td) {
+.docs-article__body th,
+.docs-article__body td {
   padding: 0.6rem 0.85rem;
   text-align: left;
   border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
 
-.docs-article__body :global(th) {
+.docs-article__body th {
   font-weight: 600;
   font-size: 0.8rem;
   text-transform: uppercase;
@@ -384,17 +384,17 @@
   color: var(--muted-foreground);
 }
 
-.docs-article__body :global(tbody tr:last-child td) { border-bottom: none; }
-.docs-article__body :global(tbody tr:nth-child(even)) { background: color-mix(in oklab, var(--muted) 35%, transparent); }
+.docs-article__body tbody tr:last-child td { border-bottom: none; }
+.docs-article__body tbody tr:nth-child(even) { background: color-mix(in oklab, var(--muted) 35%, transparent); }
 
-.docs-article__body :global(hr) {
+.docs-article__body hr {
   margin: 2.5rem 0;
   border: none;
   border-top: 1px solid var(--border);
 }
 
 /* images */
-.docs-article__body :global(img) {
+.docs-article__body img {
   max-width: 100%;
   height: auto;
   border-radius: 10px;
@@ -403,7 +403,7 @@
 }
 
 /* kbd */
-.docs-article__body :global(kbd) {
+.docs-article__body kbd {
   font-family: var(--font-mono);
   font-size: 0.82em;
   background: var(--card);
@@ -611,7 +611,7 @@
   pointer-events: auto;
 }
 
-.docs-drawer > :global(.docs-side__nav) {
+.docs-drawer > .docs-side__nav {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -623,9 +623,12 @@
 }
 
 .docs-drawer__close {
-  position: absolute;
+  /* Fixed to the viewport so the close control stays reachable regardless
+     of the drawer's scroll position. */
+  position: fixed;
   top: 1rem;
   right: 1rem;
+  z-index: 2;
   width: 36px;
   height: 36px;
   display: inline-flex;
@@ -636,6 +639,11 @@
   border-radius: 999px;
   color: var(--foreground);
   cursor: pointer;
+}
+
+.docs-drawer__close:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .docs-drawer__close:hover { border-color: var(--primary); color: var(--primary); }
@@ -674,7 +682,7 @@
 }
 
 @media (max-width: 480px) {
-  .docs-article__body :global(pre) {
+  .docs-article__body pre {
     font-size: 0.8rem;
     padding: 0.85rem 1rem;
   }
