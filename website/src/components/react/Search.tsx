@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { create, insertMultiple, search } from '@orama/orama';
+import { create, insertMultiple, search, type AnyOrama } from '@orama/orama';
 
 interface Hit {
   url: string;
@@ -11,7 +11,7 @@ export default function Search() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<Hit[]>([]);
-  const [db, setDb] = useState<Awaited<ReturnType<typeof create>> | null>(null);
+  const [db, setDb] = useState<AnyOrama | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -45,17 +45,34 @@ export default function Search() {
       setHits([]);
       return;
     }
-    search(db, { term: query, properties: ['title', 'description', 'content'] })
-      .then((res: any) => {
-        setHits(
-          (res.hits ?? []).slice(0, 8).map((h: any) => ({
-            url: h.document.url,
-            title: h.document.title,
-            description: h.document.description,
-          })),
-        );
-      })
-      .catch(() => setHits([]));
+    let cancelled = false;
+    const apply = (res: any) =>
+      setHits(
+        (res?.hits ?? []).slice(0, 8).map((h: any) => ({
+          url: h.document.url,
+          title: h.document.title,
+          description: h.document.description,
+        })),
+      );
+    try {
+      Promise.resolve(
+        search(db, {
+          term: query,
+          properties: ['title', 'description', 'content'],
+        }),
+      )
+        .then((res) => {
+          if (!cancelled) apply(res);
+        })
+        .catch(() => {
+          if (!cancelled) setHits([]);
+        });
+    } catch {
+      setHits([]);
+    }
+    return () => {
+      cancelled = true;
+    };
   }, [query, db]);
 
   return (
