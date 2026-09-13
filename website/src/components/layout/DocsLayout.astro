@@ -1,0 +1,221 @@
+---
+import BaseLayout from '~/components/layout/BaseLayout.astro';
+import Nav from '~/components/layout/Nav.astro';
+import Footer from '~/components/layout/Footer.astro';
+import DocsSidebar from '~/components/docs/DocsSidebar.astro';
+import DocsTOC from '~/components/docs/DocsTOC.astro';
+import DocsPager from '~/components/docs/DocsPager.astro';
+import { GROUP_ORDER, GROUP_TITLES, type DocsGroup, type DocsHeading, type DocsPagerLink } from '~/lib/docs';
+import '~/styles/docs.css';
+
+export interface Props {
+  title: string;
+  description?: string;
+  jsonLd?: Record<string, unknown> | Record<string, unknown>[];
+  ogImage?: string;
+  canonical?: string;
+  groups: Record<string, DocsGroup[]>;
+  groupOrder?: readonly string[];
+  groupTitles?: Record<string, string>;
+  currentSlug?: string;
+  flatOrder?: DocsPagerLink[];
+  headings?: DocsHeading[];
+  variant?: 'article' | 'index';
+}
+
+const {
+  title,
+  description,
+  jsonLd,
+  ogImage,
+  canonical,
+  groups,
+  groupOrder = GROUP_ORDER,
+  groupTitles = GROUP_TITLES as Record<string, string>,
+  currentSlug = '',
+  flatOrder = [],
+  headings = [],
+  variant = 'article',
+} = Astro.props;
+
+const flatIndex = flatOrder.findIndex((p) => p.url === `/docs/${currentSlug}`);
+const prev = flatIndex > 0 ? flatOrder[flatIndex - 1] : undefined;
+const next = flatIndex >= 0 && flatIndex < flatOrder.length - 1 ? flatOrder[flatIndex + 1] : undefined;
+const showPager = variant === 'article' && (prev || next);
+---
+
+<BaseLayout
+  title={title}
+  description={description}
+  jsonLd={jsonLd}
+  ogImage={ogImage}
+  canonical={canonical}
+>
+  <Nav />
+
+  <div class="docs-mobile-bar">
+    <button type="button" class="docs-mobile-bar__toggle" data-docs-drawer-toggle aria-expanded="false" aria-controls="docs-drawer">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="3" y1="6" x2="21" y2="6"/>
+        <line x1="3" y1="12" x2="21" y2="12"/>
+        <line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+      <span>{variant === 'index' ? 'Browse docs' : 'On this site'}</span>
+    </button>
+  </div>
+
+  <div class="docs-shell" data-variant={variant}>
+    <aside class="docs-side" aria-label="Docs navigation">
+      <a class="docs-side__back" href="/docs">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M15 18l-6-6 6-6"/>
+        </svg>
+        All docs
+      </a>
+      <DocsSidebar
+        groups={groups}
+        groupOrder={groupOrder}
+        groupTitles={groupTitles}
+        currentSlug={currentSlug}
+      />
+    </aside>
+
+    <main class="docs-main">
+      <article class="docs-article" data-variant={variant}>
+        <header class="docs-article__header">
+          {variant === 'article' && (
+            <p class="docs-article__eyebrow">
+              <a href="/docs">Docs</a>
+              {currentSlug && (
+                <>
+                  <span class="docs-article__sep" aria-hidden="true">›</span>
+                  <span>{groupTitles[currentSlug.split('/')[0]] ?? currentSlug.split('/')[0]}</span>
+                </>
+              )}
+            </p>
+          )}
+          <h1 class="docs-article__title">{title}</h1>
+          {description && <p class="docs-article__lede">{description}</p>}
+        </header>
+
+        <div class="docs-article__body">
+          <slot />
+        </div>
+
+        {showPager && <DocsPager prev={prev} next={next} />}
+
+        {variant === 'article' && (
+          <footer class="docs-article__footer">
+            <a class="docs-edit" href={`https://github.com/IamCoder18/synapse/edit/main/website/src/content/docs/${currentSlug}`} rel="noopener">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+              Edit this page on GitHub
+            </a>
+          </footer>
+        )}
+      </article>
+    </main>
+
+    {variant === 'article' && (
+      <aside class="docs-toc-col" aria-label="On this page">
+        <DocsTOC headings={headings} />
+      </aside>
+    )}
+  </div>
+
+  <div class="docs-drawer" data-docs-drawer data-open="false" id="docs-drawer" aria-hidden="true">
+    <button type="button" class="docs-drawer__close" data-docs-drawer-toggle aria-label="Close navigation">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="18" y1="6" x2="6" y2="18"/>
+        <line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+    <DocsSidebar
+      groups={groups}
+      groupOrder={groupOrder}
+      groupTitles={groupTitles}
+      currentSlug={currentSlug}
+    />
+  </div>
+
+  <Footer />
+
+  <script>
+    // Scroll-spy for the on-this-page TOC.
+    function initDocsToc() {
+      const toc = document.querySelector<HTMLElement>('[data-docs-toc]');
+      if (!toc) return;
+      const links = Array.from(toc.querySelectorAll<HTMLAnchorElement>('a[href^="#"]'));
+      if (!links.length) return;
+
+      const ids = links.map((a) => decodeURIComponent(a.getAttribute('href')!.slice(1)));
+      const targets = ids
+        .map((id) => document.getElementById(id))
+        .filter((el): el is HTMLElement => el !== null);
+      if (!targets.length) return;
+
+      let activeId = targets[0].id;
+      const setActive = (id: string) => {
+        if (id === activeId) return;
+        activeId = id;
+        for (const a of links) {
+          const aId = decodeURIComponent(a.getAttribute('href')!.slice(1));
+          a.classList.toggle('is-active', aId === id);
+        }
+      };
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          const visible = entries
+            .filter((e) => e.isIntersecting)
+            .sort((a, b) => a.target.getBoundingClientRect().top - b.target.getBoundingClientRect().top);
+          if (visible[0]) setActive(visible[0].target.id);
+        },
+        { rootMargin: '-80px 0px -70% 0px', threshold: 0 },
+      );
+      for (const t of targets) observer.observe(t);
+
+      if (window.location.hash) {
+        const id = decodeURIComponent(window.location.hash.slice(1));
+        if (ids.includes(id)) setActive(id);
+      }
+    }
+
+    // Mobile sidebar drawer toggle.
+    function initDocsDrawer() {
+      const toggles = document.querySelectorAll<HTMLButtonElement>('[data-docs-drawer-toggle]');
+      const drawer = document.querySelector<HTMLElement>('[data-docs-drawer]');
+      if (!toggles.length || !drawer) return;
+
+      const setOpen = (open: boolean) => {
+        drawer.dataset.open = String(open);
+        drawer.setAttribute('aria-hidden', String(!open));
+        document.body.style.overflow = open ? 'hidden' : '';
+        for (const t of toggles) t.setAttribute('aria-expanded', String(open));
+      };
+
+      for (const t of toggles) {
+        t.addEventListener('click', () => {
+          setOpen(drawer.dataset.open !== 'true');
+        });
+      }
+
+      drawer.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (target.closest('a')) setOpen(false);
+        if (target === drawer) setOpen(false);
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && drawer.dataset.open === 'true') setOpen(false);
+      });
+    }
+
+    document.addEventListener('astro:page-load', () => {
+      initDocsToc();
+      initDocsDrawer();
+    });
+  </script>
+</BaseLayout>

@@ -1,0 +1,48 @@
+---
+import { GROUP_ORDER, GROUP_TITLES, type DocsGroup } from '~/lib/docs';
+
+export interface Props {
+  groups: Record<string, DocsGroup[]>;
+  groupOrder?: readonly string[];
+  groupTitles?: Record<string, string>;
+  currentSlug?: string;
+  scope?: 'page' | 'drawer';
+}
+
+const {
+  groups,
+  groupOrder = GROUP_ORDER,
+  groupTitles = GROUP_TITLES as Record<string, string>,
+  currentSlug = '',
+  scope = 'page',
+} = Astro.props;
+---
+
+<nav class={`docs-side__nav`} aria-label="Docs sections">
+  {groupOrder.map((g) => {
+    const items = groups[g];
+    if (!items?.length) return null;
+    return (
+      <section class="docs-side__group">
+        <h3 class="docs-side__group-title">{groupTitles[g] ?? g}</h3>
+        <ul class="docs-side__list" role="list">
+          {items.map((i) => {
+            const isActive = i.url === `/docs/${currentSlug}` || (currentSlug === '' && i.url === '/docs');
+            return (
+              <li>
+                <a
+                  href={i.url}
+                  aria-current={isActive ? 'page' : undefined}
+                  class={isActive ? 'is-active' : ''}
+                >
+                  <span class="docs-side__rail" aria-hidden="true"></span>
+                  <span class="docs-side__label">{i.title}</span>
+                </a>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+    );
+  })}
+</nav>
