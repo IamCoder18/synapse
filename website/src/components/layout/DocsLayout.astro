@@ -127,7 +127,7 @@ const showPager = variant === 'article' && (prev || next);
     )}
   </div>
 
-  <div class="docs-drawer" data-docs-drawer data-open="false" id="docs-drawer" aria-hidden="true">
+  <div class="docs-drawer" data-docs-drawer data-open="false" id="docs-drawer" aria-hidden="true" inert>
     <button type="button" class="docs-drawer__close" data-docs-drawer-close aria-label="Close navigation">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <line x1="18" y1="6" x2="6" y2="18"/>
@@ -177,8 +177,12 @@ const showPager = variant === 'article' && (prev || next);
     ].join(',');
 
     function getFocusable(root: HTMLElement): HTMLElement[] {
+      // Only the `inert` attribute is a reliable filter here: `offsetParent`
+      // is `null` for `position: fixed` and `position: sticky` elements, which
+      // would incorrectly drop the drawer's fixed-position close button from
+      // the focusable list.
       return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-        (el) => !el.hasAttribute('inert') && el.offsetParent !== null,
+        (el) => !el.hasAttribute('inert') && !el.closest('[inert]'),
       );
     }
 
@@ -259,6 +263,7 @@ const showPager = variant === 'article' && (prev || next);
         bodyOverflowBefore = document.body.style.overflow;
         drawer.dataset.open = 'true';
         drawer.setAttribute('aria-hidden', 'false');
+        drawer.removeAttribute('inert');
         document.body.style.overflow = 'hidden';
         setInertSiblings(true);
         for (const t of toggles) t.setAttribute('aria-expanded', 'true');
@@ -273,6 +278,7 @@ const showPager = variant === 'article' && (prev || next);
         if (drawer.dataset.open !== 'true') return;
         drawer.dataset.open = 'false';
         drawer.setAttribute('aria-hidden', 'true');
+        drawer.setAttribute('inert', '');
         document.body.style.overflow = bodyOverflowBefore;
         setInertSiblings(false);
         for (const t of toggles) t.setAttribute('aria-expanded', 'false');
@@ -318,6 +324,7 @@ const showPager = variant === 'article' && (prev || next);
       };
 
       for (const t of toggles) t.addEventListener('click', onToggleClick);
+      if (closeBtn) closeBtn.addEventListener('click', close);
       drawer.addEventListener('click', onDrawerClick);
       if (keydownHandler) document.removeEventListener('keydown', keydownHandler);
       keydownHandler = onKeydown;
@@ -330,6 +337,7 @@ const showPager = variant === 'article' && (prev || next);
 
       register(() => {
         for (const t of toggles) t.removeEventListener('click', onToggleClick);
+        if (closeBtn) closeBtn.removeEventListener('click', close);
         drawer.removeEventListener('click', onDrawerClick);
         if (keydownHandler) {
           document.removeEventListener('keydown', keydownHandler);
