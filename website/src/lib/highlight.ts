@@ -25,9 +25,15 @@ export const synapseTheme: ThemeRegistration = {
 
 const highlighter = await createHighlighter({
   themes: [synapseTheme],
-  langs: ['java'],
+  langs: ['java', 'groovy', 'kotlin', 'properties'],
 })
 
 export function highlightJava(code: string): string {
   return highlighter.codeToHtml(code, { lang: 'java', theme: synapseTheme })
+}
+
+export type SnippetLang = 'java' | 'groovy' | 'kotlin' | 'properties';
+
+export function highlightCode(code: string, lang: SnippetLang): string {
+  return highlighter.codeToHtml(code, { lang, theme: synapseTheme })
 }
