@@ -1,0 +1,82 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+repositories {
+    maven { url 'https://repo.dairy.foundation/releases' }
+    mavenCentral()
+}
+
+configurations {
+    solverslibAar
+}
+
+dependencies {
+    implementation project(':')
+    compileOnly files('../libs/ftc-sdk-stub.jar')
+    runtimeOnly files('../libs/ftc-sdk-stub.jar')
+    solverslibAar 'org.solverslib:core:0.3.6@aar'
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs = ['src/main/java', 'sdk-stubs']
+        }
+    }
+}
+
+def extractedSolverslibJar = layout.buildDirectory.file('solverslib/classes.jar')
+
+tasks.register('extractSolverslib', Copy) {
+    from {
+        configurations.solverslibAar.collect { it.name.endsWith('.aar') ? zipTree(it) : it }
+    }
+    include 'classes.jar'
+    into layout.buildDirectory.dir('solverslib')
+}
+
+tasks.named('compileJava') {
+    dependsOn 'extractSolverslib'
+}
+
+sourceSets.main.compileClasspath += files(extractedSolverslibJar)
+sourceSets.main.runtimeClasspath += files(extractedSolverslibJar)
+
+application {
+    mainClass = 'com.aaravlabs.synapse.bench.harness.Main'
+}
+
+tasks.named('run', JavaExec) {
+    dependsOn 'extractSolverslib'
+    jvmArgs '-Xms512m', '-Xmx2g'
+    if (project.hasProperty('benchArgs')) {
+        args project.property('benchArgs').toString().split('\\s+')
+    }
+}
+
+tasks.register('verifyFrameworkClasses', JavaExec) {
+    group = 'verification'
+    description = 'Asserts measured framework classes load from the real project/AAR/stub jars.'
+    dependsOn 'extractSolverslib', 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.aaravlabs.synapse.bench.harness.Main'
+    args 'gates', '--only', 'framework,structure'
+    jvmArgs '-Xms256m', '-Xmx1g'
+}
+
+tasks.register('verifyMockBudget', JavaExec) {
+    group = 'verification'
+    description = 'Asserts SimMotor device-write mock cost is <5% of framework dispatch cost.'
+    dependsOn 'extractSolverslib', 'classes'
+    classpath = sourceSets.main.runtimeClasspath
+    mainClass = 'com.aaravlabs.synapse.bench.harness.Main'
+    args 'gates', '--only', 'mock-budget'
+    jvmArgs '-Xms512m', '-Xmx2g'
+}

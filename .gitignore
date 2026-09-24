@@ -4,3 +4,8 @@ build/
 *.iml
 local.properties
 .DS_Store
+
+# Benchmark runs: results/baseline.json is committed; everything else is per-run.
+benchmarks/results/latest.json
+benchmarks/results/latest.md
+benchmarks/results/fork-*.json

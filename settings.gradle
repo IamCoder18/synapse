@@ -4,6 +4,8 @@ plugins {
 
 rootProject.name = 'synapse'
 
+include 'benchmarks'
+
 // Publishes to Maven Central via the Central Portal publisher API
 // (https://central.sonatype.org/publish/publish-portal-api/). The legacy
 // OSSRH staging API compatibility shim used by gradle-nexus/publish-plugin
