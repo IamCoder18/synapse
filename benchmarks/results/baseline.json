@@ -1,0 +1,754 @@
+{
+  "schema": 1,
+  "env": {
+    "os": "Linux 7.0.0-31-generic (amd64)",
+    "jdk": "21.0.12.1 (Ubuntu)",
+    "cpu": "Intel(R) Core(TM) i5-8500T CPU @ 2.10GHz",
+    "gitSha": "00151d03c21051c66c61a5ef6c08295b609447ee",
+    "timestamp": "2026-09-24T04:36:47.139567055Z",
+    "mode": "full",
+    "seed": "42",
+    "forks": "2",
+    "rounds": "3"
+  },
+  "scenarios": [
+    {
+      "scenario": "S0_MinimalDrive",
+      "style": "raw",
+      "latencyActuationNs": {
+        "p50": 4600.500000,
+        "p90": 5167.000000,
+        "p99": 25147.000000,
+        "max": 43619.000000,
+        "min": 3780.500000,
+        "mean": 5277.346939,
+        "count": 49
+      },
+      "taskRates": {
+        "loop": {
+          "targetHz": 0.000000,
+          "achievedHz": 11355687.508929,
+          "jitterP99Ns": 94.000000,
+          "count": 170336585
+        }
+      },
+      "trackingError": {
+        "liftRmse": 0.000000,
+        "headingRmse": 0.000000
+      },
+      "loopHz": 11355690.522157,
+      "allocBytesPerSec": 0.000000
+    },
+    {
+      "scenario": "S0_MinimalDrive",
+      "style": "solverslib",
+      "latencyActuationNs": {
+        "p50": 4364.500000,
+        "p90": 5004.500000,
+        "p99": 11968.000000,
+        "max": 12393.000000,
+        "min": 3295.500000,
+        "mean": 4619.846939,
+        "count": 49
+      },
+      "taskRates": {
+        "schedulerRun": {
+          "targetHz": 0.000000,
+          "achievedHz": 2665546.092017,
+          "jitterP99Ns": 396.500000,
+          "count": 39983493
+        }
+      },
+      "trackingError": {
+        "liftRmse": 0.000000,
+        "headingRmse": 0.000000
+      },
+      "loopHz": 2665548.251931,
+      "allocBytesPerSec": 0.000000
+    },
+    {
+      "scenario": "S0_MinimalDrive",
+      "style": "synapse",
+      "latencyActuationNs": {
+        "p50": 8974349.500000,
+        "p90": 14722168.500000,
+        "p99": 16055130.000000,
+        "max": 16168277.000000,
+        "min": 310273.000000,
+        "mean": 8587528.357143,
+        "count": 49
+      },
+      "taskRates": {
+        "drive": {
+          "targetHz": 0.000000,
+          "achievedHz": 61.802457,
+          "jitterP99Ns": 16972111.000000,
+          "count": 927
+        }
+      },
+      "trackingError": {
+        "liftRmse": 0.000000,
+        "headingRmse": 0.000000
+      },
+      "loopHz": 61.799421,
+      "allocBytesPerSec": 0.000000
+    },
+    {
+      "scenario": "S1_BasicTeleop",
+      "style": "raw",
+      "latencyActuationNs": {
+        "p50": 588.000000,
+        "p90": 717.500000,
+        "p99": 965.500000,
+        "max": 984.500000,
+        "min": 430.000000,
+        "mean": 595.061225,
+        "count": 49
+      },
+      "taskRates": {
+        "loop": {
+          "targetHz": 0.000000,
+          "achievedHz": 8060093.965876,
+          "jitterP99Ns": 130.500000,
+          "count": 120902127
+        },
+        "telemetry": {
+          "targetHz": 10.000000,
+          "achievedHz": 9.999972,
+          "jitterP99Ns": 100002696.500000,
+          "count": 150
+        }
+      },
+      "trackingError": {
+        "liftRmse": 0.000000,
+        "headingRmse": 0.000000
+      },
+      "loopHz": 8060095.584808,
+      "allocBytesPerSec": 0.000000
+    },
+    {
+      "scenario": "S1_BasicTeleop",
+      "style": "solverslib",
+      "latencyActuationNs": {
+        "p50": 740.500000,
+        "p90": 1150.500000,
+        "p99": 6604.000000,
+        "max": 11452.000000,
+        "min": 456.000000,
+        "mean": 1006.142857,
+        "count": 49
+      },
+      "taskRates": {
+        "schedulerRun": {
+          "targetHz": 0.000000,
+          "achievedHz": 1989818.276313,
+          "jitterP99Ns": 551.500000,
+          "count": 29847519
+        },
+        "telemetry": {
+          "targetHz": 10.000000,
+          "achievedHz": 9.999938,
+          "jitterP99Ns": 100010775.000000,
+          "count": 150
+        }
+      },
+      "trackingError": {
+        "liftRmse": 0.000000,
+        "headingRmse": 0.000000
+      },
+      "loopHz": 1989818.942205,
+      "allocBytesPerSec": 0.000000
+    },
+    {
+      "scenario": "S1_BasicTeleop",
+      "style": "synapse",
+      "latencyActuationNs": {
+        "p50": 8923942.500000,
+        "p90": 14326357.500000,
+        "p99": 15929975.000000,
+        "max": 15992164.000000,
+        "min": 530305.000000,
+        "mean": 8374790.836735,
+        "count": 49
+      },
+      "taskRates": {
+        "drive": {
+          "targetHz": 0.000000,
+          "achievedHz": 61.845828,
+          "jitterP99Ns": 16621410.500000,
+          "count": 928
+        },
+        "telemetry": {
+          "targetHz": 10.000000,
+          "achievedHz": 9.991404,
+          "jitterP99Ns": 100164563.500000,
+          "count": 150
+        }
+      },
+      "trackingError": {
+        "liftRmse": 0.000000,
+        "headingRmse": 0.000000
+      },
+      "loopHz": 136.798741,
+      "allocBytesPerSec": 0.000000
+    },
+    {
+      "scenario": "S2_MultiSubsystem",
+      "style": "raw",
+      "latencyActuationNs": {
+        "p50": 11461653.500000,
+        "p90": 18454153.000000,
+        "p99": 121708606.000000,
+        "max": 212110660.000000,
+        "min": 234353.500000,
+        "mean": 15144299.083334,
+        "count": 48
+      },
+      "taskRates": {
+        "loop": {
+          "targetHz": 0.000000,
+          "achievedHz": 11820728.046416,
+          "jitterP99Ns": 81.500000,
+          "count": 177312094
+        },
+        "drive": {
+          "targetHz": 50.000000,
+          "achievedHz": 49.999196,
+          "jitterP99Ns": 20002449.500000,
+          "count": 750
+        },
+        "liftPidf": {
+          "targetHz": 100.000000,
+          "achievedHz": 99.997680,
+          "jitterP99Ns": 10006632.500000,
+          "count": 1500
+        },
+        "telemetry": {
+          "targetHz": 10.000000,
+          "achievedHz": 9.999985,
+          "jitterP99Ns": 100002568.000000,
+          "count": 150
+        }
+      },
+      "trackingError": {
+        "liftRmse": 12.445197,
+        "headingRmse": 0.000000
+      },
+      "loopHz": 11820729.614010,
+      "allocBytesPerSec": 0.000000
+    },
+    {
+      "scenario": "S2_MultiSubsystem",
+      "style": "solverslib",
+      "latencyActuationNs": {
+        "p50": 11315799.000000,
+        "p90": 17956471.000000,
+        "p99": 19101091.500000,
+        "max": 19363593.500000,
+        "min": 263629.000000,
+        "mean": 10324626.166667,
+        "count": 48
+      },
+      "taskRates": {
+        "schedulerRun": {
+          "targetHz": 0.000000,
+          "achievedHz": 1216541.572542,
+          "jitterP99Ns": 906.000000,
+          "count": 18248750
+        },
+        "drive": {
+          "targetHz": 50.000000,
+          "achievedHz": 49.995626,
+          "jitterP99Ns": 20008988.500000,
+          "count": 750
+        },
+        "liftPidf": {
+          "targetHz": 100.000000,
+          "achievedHz": 99.986902,
+          "jitterP99Ns": 10010348.000000,
+          "count": 1500
+        },
+        "telemetry": {
+          "targetHz": 10.000000,
+          "achievedHz": 9.999537,
+          "jitterP99Ns": 100077489.500000,
+          "count": 150
+        }
+      },
+      "trackingError": {
+        "liftRmse": 12.434594,
+        "headingRmse": 0.000000
+      },
+      "loopHz": 1216543.208293,
+      "allocBytesPerSec": 0.000000
+    },
+    {
+      "scenario": "S2_MultiSubsystem",
+      "style": "synapse",
+      "latencyActuationNs": {
+        "p50": 18445927.000000,
+        "p90": 29532981.000000,
+        "p99": 133206306.000000,
+        "max": 222372278.500000,
+        "min": 3100397.000000,
+        "mean": 22367968.270833,
+        "count": 48
+      },
+      "taskRates": {
+        "drive": {
+          "targetHz": 50.000000,
+          "achievedHz": 49.769792,
+          "jitterP99Ns": 20497130.500000,
+          "count": 747
+        },
+        "liftPidf": {
+          "targetHz": 100.000000,
+          "achievedHz": 99.096121,
+          "jitterP99Ns": 10522434.500000,
+          "count": 1486
+        },
+        "telemetry": {
+          "targetHz": 10.000000,
+          "achievedHz": 9.989760,
+          "jitterP99Ns": 100417551.500000,
+          "count": 150
+        },
+        "align": {
+          "targetHz": 0.000000,
+          "achievedHz": 1.000583,
+          "jitterP99Ns": 1048623698.000000,
+          "count": 15
+        }
+      },
+      "trackingError": {
+        "liftRmse": 12.348435,
+        "headingRmse": 0.000000
+      },
+      "loopHz": 352.663173,
+      "allocBytesPerSec": 0.000000
+    },
+    {
+      "scenario": "S2_MultiSubsystem",
+      "style": "rawmt",
+      "latencyActuationNs": {
+        "p50": 11517961.000000,
+        "p90": 18432388.500000,
+        "p99": 19689812.500000,
+        "max": 19861047.500000,
+        "min": 123145.000000,
+        "mean": 10912343.572917,
+        "count": 48
+      },
+      "taskRates": {
+        "loop": {
+          "targetHz": 0.000000,
+          "achievedHz": 11833134.031804,
+          "jitterP99Ns": 81.000000,
+          "count": 177498327
+        },
+        "drive": {
+          "targetHz": 50.000000,
+          "achievedHz": 49.999394,
+          "jitterP99Ns": 20004995.000000,
+          "count": 750
+        },
+        "liftPidf": {
+          "targetHz": 100.000000,
+          "achievedHz": 99.997375,
+          "jitterP99Ns": 10007926.000000,
+          "count": 1500
+        },
+        "telemetry": {
+          "targetHz": 10.000000,
+          "achievedHz": 9.999973,
+          "jitterP99Ns": 100006276.000000,
+          "count": 150
+        },
+        "align": {
+          "targetHz": 0.000000,
+          "achievedHz": 1.000787,
+          "jitterP99Ns": 1044874980.000000,
+          "count": 15
+        }
+      },
+      "trackingError": {
+        "liftRmse": 12.389621,
+        "headingRmse": 0.000000
+      },
+      "loopHz": 11833134.220495,
+      "allocBytesPerSec": 0.000000
+    },
+    {
+      "scenario": "S3_HeavyRobot",
+      "style": "raw",
+      "latencyActuationNs": {
+        "p50": 28335937.000000,
+        "p90": 33413909.500000,
+        "p99": 34630267.000000,
+        "max": 34877784.000000,
+        "min": 11490614.500000,
+        "mean": 26261024.061224,
+        "count": 49
+      },
+      "taskRates": {
+        "loop": {
+          "targetHz": 0.000000,
+          "achievedHz": 1731303.154708,
+          "jitterP99Ns": 89.000000,
+          "count": 25952847
+        },
+        "drive": {
+          "targetHz": 50.000000,
+          "achievedHz": 49.995072,
+          "jitterP99Ns": 20011036.500000,
+          "count": 750
+        },
+        "liftPidf": {
+          "targetHz": 100.000000,
+          "achievedHz": 49.995066,
+          "jitterP99Ns": 20013906.000000,
+          "count": 749
+        },
+        "headingPidf": {
+          "targetHz": 200.000000,
+          "achievedHz": 51.228780,
+          "jitterP99Ns": 20010119.000000,
+          "count": 768
+        },
+        "vision": {
+          "targetHz": 30.000000,
+          "achievedHz": 29.997027,
+          "jitterP99Ns": 40012449.500000,
+          "count": 449
+        },
+        "logger": {
+          "targetHz": 50.000000,
+          "achievedHz": 49.995072,
+          "jitterP99Ns": 20011036.500000,
+          "count": 750
+        },
+        "telemetry": {
+          "targetHz": 10.000000,
+          "achievedHz": 9.999046,
+          "jitterP99Ns": 100150505.000000,
+          "count": 150
+        }
+      },
+      "trackingError": {
+        "liftRmse": 13.140224,
+        "headingRmse": 0.002373
+      },
+      "loopHz": 1730181.301204,
+      "allocBytesPerSec": 0.000000
+    },
+    {
+      "scenario": "S3_HeavyRobot",
+      "style": "solverslib",
+      "latencyActuationNs": {
+        "p50": 28142213.500000,
+        "p90": 33719079.000000,
+        "p99": 35494141.500000,
+        "max": 35791568.500000,
+        "min": 11220804.500000,
+        "mean": 26585838.959184,
+        "count": 49
+      },
+      "taskRates": {
+        "schedulerRun": {
+          "targetHz": 0.000000,
+          "achievedHz": 166003.282697,
+          "jitterP99Ns": 1055.000000,
+          "count": 2488315
+        },
+        "drive": {
+          "targetHz": 50.000000,
+          "achievedHz": 49.895543,
+          "jitterP99Ns": 20376794.000000,
+          "count": 748
+        },
+        "liftPidf": {
+          "targetHz": 100.000000,
+          "achievedHz": 49.989894,
+          "jitterP99Ns": 20441318.000000,
+          "count": 749
+        },
+        "headingPidf": {
+          "targetHz": 200.000000,
+          "achievedHz": 50.924367,
+          "jitterP99Ns": 20396336.500000,
+          "count": 763
+        },
+        "vision": {
+          "targetHz": 30.000000,
+          "achievedHz": 30.012719,
+          "jitterP99Ns": 40025486.500000,
+          "count": 449
+        },
+        "logger": {
+          "targetHz": 50.000000,
+          "achievedHz": 49.989902,
+          "jitterP99Ns": 20012757.500000,
+          "count": 750
+        },
+        "telemetry": {
+          "targetHz": 10.000000,
+          "achievedHz": 9.997890,
+          "jitterP99Ns": 100560435.500000,
+          "count": 150
+        }
+      },
+      "trackingError": {
+        "liftRmse": 13.221066,
+        "headingRmse": 0.002250
+      },
+      "loopHz": 165886.763417,
+      "allocBytesPerSec": 0.000000
+    },
+    {
+      "scenario": "S3_HeavyRobot",
+      "style": "synapse",
+      "latencyActuationNs": {
+        "p50": 19278112.500000,
+        "p90": 30411155.000000,
+        "p99": 35561370.500000,
+        "max": 36964905.000000,
+        "min": 7190715.500000,
+        "mean": 20413225.724490,
+        "count": 49
+      },
+      "taskRates": {
+        "drive": {
+          "targetHz": 50.000000,
+          "achievedHz": 49.792840,
+          "jitterP99Ns": 20733155.500000,
+          "count": 747
+        },
+        "liftPidf": {
+          "targetHz": 100.000000,
+          "achievedHz": 99.155537,
+          "jitterP99Ns": 10762154.500000,
+          "count": 1488
+        },
+        "headingPidf": {
+          "targetHz": 200.000000,
+          "achievedHz": 196.614946,
+          "jitterP99Ns": 5776974.000000,
+          "count": 2949
+        },
+        "vision": {
+          "targetHz": 30.000000,
+          "achievedHz": 30.000017,
+          "jitterP99Ns": 34045637.000000,
+          "count": 450
+        },
+        "logger": {
+          "targetHz": 50.000000,
+          "achievedHz": 49.748345,
+          "jitterP99Ns": 20873695.500000,
+          "count": 746
+        },
+        "telemetry": {
+          "targetHz": 10.000000,
+          "achievedHz": 9.989908,
+          "jitterP99Ns": 100716206.000000,
+          "count": 150
+        },
+        "align": {
+          "targetHz": 0.000000,
+          "achievedHz": 0.996110,
+          "jitterP99Ns": 1060832611.000000,
+          "count": 15
+        }
+      },
+      "trackingError": {
+        "liftRmse": 12.322570,
+        "headingRmse": 0.002036
+      },
+      "loopHz": 646.995651,
+      "allocBytesPerSec": 0.000000
+    },
+    {
+      "scenario": "S3_HeavyRobot",
+      "style": "rawmt",
+      "latencyActuationNs": {
+        "p50": 11682709.500000,
+        "p90": 17406666.500000,
+        "p99": 19775135.500000,
+        "max": 20007189.000000,
+        "min": 871243.000000,
+        "mean": 10714644.102041,
+        "count": 49
+      },
+      "taskRates": {
+        "loop": {
+          "targetHz": 0.000000,
+          "achievedHz": 11711294.698859,
+          "jitterP99Ns": 83.000000,
+          "count": 175670830
+        },
+        "drive": {
+          "targetHz": 50.000000,
+          "achievedHz": 49.999336,
+          "jitterP99Ns": 20009062.000000,
+          "count": 750
+        },
+        "liftPidf": {
+          "targetHz": 100.000000,
+          "achievedHz": 99.996199,
+          "jitterP99Ns": 10008811.000000,
+          "count": 1500
+        },
+        "headingPidf": {
+          "targetHz": 200.000000,
+          "achievedHz": 199.988252,
+          "jitterP99Ns": 5008792.500000,
+          "count": 3000
+        },
+        "vision": {
+          "targetHz": 30.000000,
+          "achievedHz": 30.000084,
+          "jitterP99Ns": 34547488.000000,
+          "count": 450
+        },
+        "logger": {
+          "targetHz": 50.000000,
+          "achievedHz": 49.999823,
+          "jitterP99Ns": 20796603.500000,
+          "count": 750
+        },
+        "telemetry": {
+          "targetHz": 10.000000,
+          "achievedHz": 9.999978,
+          "jitterP99Ns": 100006182.000000,
+          "count": 150
+        },
+        "align": {
+          "targetHz": 0.000000,
+          "achievedHz": 0.996295,
+          "jitterP99Ns": 1059342120.000000,
+          "count": 15
+        }
+      },
+      "trackingError": {
+        "liftRmse": 12.434635,
+        "headingRmse": 0.002049
+      },
+      "loopHz": 11711291.978560,
+      "allocBytesPerSec": 0.000000
+    }
+  ],
+  "micro": {
+    "micro.raw.directCall": {
+      "nsPerOp": 10.015000,
+      "p50": 11.000000,
+      "p99": 18.500000,
+      "count": 1000000.000000
+    },
+    "micro.publish.subscribers0": {
+      "nsPerOp": 62.960000,
+      "p50": 60.500000,
+      "p99": 80.500000,
+      "count": 1000000.000000
+    },
+    "micro.publish.subscribers1": {
+      "nsPerOp": 6140.721800,
+      "p50": 4918.000000,
+      "p99": 21774.000000,
+      "count": 20000.000000
+    },
+    "micro.publish.subscribers8": {
+      "nsPerOp": 5324.645850,
+      "p50": 3944.000000,
+      "p99": 22441.000000,
+      "count": 20000.000000
+    },
+    "micro.publish.annotationSubscriber": {
+      "nsPerOp": 6254.629325,
+      "p50": 5000.000000,
+      "p99": 21798.000000,
+      "count": 20000.000000
+    },
+    "micro.topic.recordLatest": {
+      "nsPerOp": 62.657500,
+      "p50": 59.500000,
+      "p99": 82.000000,
+      "count": 1000000.000000
+    },
+    "micro.topic.latestValue": {
+      "nsPerOp": 27.727500,
+      "p50": 27.000000,
+      "p99": 37.000000,
+      "count": 1000000.000000
+    },
+    "micro.topic.recordLatest.1p1c": {
+      "nsPerOp": 365.349193,
+      "p50": 361.000000,
+      "p99": 379.500000,
+      "count": 1099125.500000
+    },
+    "micro.topic.recordLatest.4p4c": {
+      "nsPerOp": 285.326381,
+      "p50": 283.500000,
+      "p99": 326.000000,
+      "count": 1407154.000000
+    },
+    "micro.subscribe.churn": {
+      "nsPerOp": 91.587500,
+      "p50": 76.000000,
+      "p99": 210.500000,
+      "count": 1000000.000000
+    },
+    "micro.hardware.run": {
+      "nsPerOp": 4678.642425,
+      "p50": 4833.000000,
+      "p99": 18823.000000,
+      "count": 20000.000000
+    },
+    "micro.hardware.call": {
+      "nsPerOp": 5382.108625,
+      "p50": 4617.500000,
+      "p99": 14161.000000,
+      "count": 20000.000000
+    },
+    "micro.gamepad.adaptorPoll": {
+      "nsPerOp": 5237.752500,
+      "p50": 5183.000000,
+      "p99": 6008.000000,
+      "count": 1000000.000000
+    },
+    "micro.solverslib.schedulerRun1": {
+      "nsPerOp": 35.100000,
+      "p50": 33.500000,
+      "p99": 44.500000,
+      "count": 1000000.000000
+    },
+    "micro.solverslib.schedulerRun8": {
+      "nsPerOp": 100.142500,
+      "p50": 97.500000,
+      "p99": 124.000000,
+      "count": 1000000.000000
+    },
+    "micro.solverslib.buttonRead": {
+      "nsPerOp": 260.770000,
+      "p50": 254.000000,
+      "p99": 313.000000,
+      "count": 1000000.000000
+    },
+    "micro.sim.deviceWrite": {
+      "nsPerOp": 98.270000,
+      "p50": 96.500000,
+      "p99": 118.000000,
+      "count": 1000000.000000
+    }
+  },
+  "gates": {
+    "frameworkClasses": true,
+    "structure": true,
+    "mockBudget": true,
+    "mockBudgetRatioPct": 2.100396,
+    "ok": true,
+    "messages": [
+      "merged 2 forks (median)"
+    ]
+  }
+}
