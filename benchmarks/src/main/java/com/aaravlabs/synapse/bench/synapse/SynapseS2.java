@@ -118,7 +118,7 @@ public final class SynapseS2 implements PairRunner {
             liftMeter.tick();
             long now = System.nanoTime();
             double target = world.setpoints().liftTargetAt(now);
-            double power = liftPidf.update(world.plant().liftPos, target, now);
+            double power = liftPidf.update(world.sensors().liftPos(), target, now);
             world.liftMotor().setPower(power);
         }
     }
@@ -199,7 +199,7 @@ public final class SynapseS2 implements PairRunner {
         public void publishTelemetry() {
             metrics.countLoopIteration();
             telemetryMeter.tick();
-            orchestrator.publish("telemetry/lift", world.plant().liftPos);
+            orchestrator.publish("telemetry/lift", world.sensors().liftPos());
             world.telemetry().update();
         }
     }

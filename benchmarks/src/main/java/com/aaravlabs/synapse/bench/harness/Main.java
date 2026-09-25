@@ -101,8 +101,9 @@ public final class Main {
                 Path forkOut = cfg.outDir.resolve("fork-" + i + ".json");
                 List<String> child = new ArrayList<>();
                 child.add(System.getProperty("java.home") + "/bin/java");
-                child.add("-Xms512m");
-                child.add("-Xmx2g");
+                child.add("-Xms128m");
+                child.add("-Xmx256m");
+                child.add("-Xmn16m");
                 child.add("-cp");
                 child.add(System.getProperty("java.class.path"));
                 child.add(Main.class.getName());
@@ -242,9 +243,11 @@ public final class Main {
         List<Metrics.TaskSnapshot> tasks = metrics.taskSnapshots();
         double loopHz = metrics.loopHz();
         double alloc = metrics.allocBytesPerSec();
+        long gcCount = metrics.gcCount();
+        long gcMillis = metrics.gcMillis();
         world.close();
         return Report.Pair.fromSnapshot(scenario.name(), style, latency, tasks,
-                liftRmse, headingRmse, loopHz, alloc);
+                liftRmse, headingRmse, loopHz, alloc, gcCount, gcMillis);
     }
 
     private static List<String> filterStyles(List<String> available, List<String> wanted) {
@@ -268,7 +271,7 @@ public final class Main {
         Report.Pair first = rounds.get(0);
 
         Map<String, Object> lat = new LinkedHashMap<>();
-        for (String p : new String[] {"p50", "p90", "p99", "max", "min", "mean"}) {
+        for (String p : new String[] {"p50", "p90", "p99", "p999", "max", "min", "mean"}) {
             lat.put(p, medianOf(rounds, r -> num(((Map<?, ?>) r.latencyActuationNs).get(p))));
         }
         lat.put("count", (long) medianOf(rounds, r -> num(r.latencyActuationNs.get("count"))));
@@ -286,6 +289,14 @@ public final class Main {
                 Map<?, ?> t = (Map<?, ?>) r.taskRates.get(name);
                 return t == null ? 0 : num(t.get("jitterP99Ns"));
             }));
+            entry.put("jitterP999Ns", medianOf(rounds, r -> {
+                Map<?, ?> t = (Map<?, ?>) r.taskRates.get(name);
+                return t == null ? 0 : num(t.get("jitterP999Ns"));
+            }));
+            entry.put("deadlineMissPct", medianOf(rounds, r -> {
+                Map<?, ?> t = (Map<?, ?>) r.taskRates.get(name);
+                return t == null ? 0 : num(t.get("deadlineMissPct"));
+            }));
             entry.put("count", (long) medianOf(rounds, r -> {
                 Map<?, ?> t = (Map<?, ?>) r.taskRates.get(name);
                 return t == null ? 0 : num(t.get("count"));
@@ -299,7 +310,10 @@ public final class Main {
 
         double loopHz = medianOf(rounds, r -> r.loopHz);
         double alloc = medianOf(rounds, r -> r.allocBytesPerSec);
-        return new Report.Pair(first.scenario, first.style, lat, rates, tracking, loopHz, alloc);
+        long gcCount = (long) medianOf(rounds, r -> r.gcCount);
+        long gcMillis = (long) medianOf(rounds, r -> r.gcMillis);
+        return new Report.Pair(first.scenario, first.style, lat, rates, tracking, loopHz, alloc,
+                gcCount, gcMillis);
     }
 
     private interface PairDouble {

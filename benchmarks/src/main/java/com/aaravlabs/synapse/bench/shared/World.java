@@ -3,9 +3,11 @@ package com.aaravlabs.synapse.bench.shared;
 import com.qualcomm.robotcore.hardware.Gamepad;
 
 /**
- * Per-run shared world: real stub {@link Gamepad}s, {@link SimPlant} devices,
- * optional {@link SimCamera}, setpoints and the seeded stimulus timeline. Style
- * packages consume this and their framework APIs only.
+ * Per-run shared world: real stub {@link Gamepad}s, {@link SimPlant} devices on
+ * a shared {@link LynxBus}, realistic {@link SimSensors} reads, a
+ * {@link DriverStation} packet link for gamepad updates, {@link SimTelemetry},
+ * setpoints and the seeded stimulus timeline. Style packages consume this and
+ * their framework APIs only.
  */
 public final class World implements AutoCloseable {
 
@@ -17,13 +19,16 @@ public final class World implements AutoCloseable {
     private final Gamepad gamepad2 = new Gamepad();
     private final Setpoints setpoints;
     private final SimPlant plant;
+    private final LynxBus bus;
+    private final SimSensors sensors;
     private final SimMotor leftMotor;
     private final SimMotor rightMotor;
     private final SimMotor liftMotor;
     private final SimMotor intakeMotor;
     private final SimServo servo;
     private final SimCamera camera;
-    private final NoopTelemetry telemetry = new NoopTelemetry();
+    private final SimTelemetry telemetry = new SimTelemetry();
+    private final DriverStation driverStation;
     private final StimulusTimeline stimulus;
     private final LatencyProbe actuation;
 
@@ -44,17 +49,20 @@ public final class World implements AutoCloseable {
         this.actuation = metrics.probe("actuation");
         this.setpoints = new Setpoints(System.nanoTime() + 50_000_000L);
         this.plant = new SimPlant(setpoints, scenario.hasLift(), scenario.hasHeadingHold());
+        this.bus = new LynxBus();
+        this.sensors = new SimSensors(plant, bus, seed);
+        this.driverStation = new DriverStation(seed);
         // Only the drive-left write carries the actuation latency probe: the measured
         // path is the stick stimulus -> drive actuation. Other device writes stay
         // un-instrumented so they cannot steal the pairing.
-        this.leftMotor = new SimMotor(plant, SimPlant.LEFT, actuation);
-        this.rightMotor = new SimMotor(plant, SimPlant.RIGHT, null);
-        this.liftMotor = new SimMotor(plant, SimPlant.LIFT, null);
-        this.intakeMotor = new SimMotor(plant, SimPlant.INTAKE, null);
-        this.servo = new SimServo(plant, null);
+        this.leftMotor = new SimMotor(plant, SimPlant.LEFT, actuation, bus);
+        this.rightMotor = new SimMotor(plant, SimPlant.RIGHT, null, bus);
+        this.liftMotor = new SimMotor(plant, SimPlant.LIFT, null, bus);
+        this.intakeMotor = new SimMotor(plant, SimPlant.INTAKE, null, bus);
+        this.servo = new SimServo(plant, null, bus);
         this.camera = scenario.hasVision() ? new SimCamera() : null;
         this.stimulus = StimulusTimeline.build(scenario, seed, gamepad1, gamepad2, actuation,
-                spanSec, leftPowerSign);
+                driverStation, spanSec, leftPowerSign);
     }
 
     public Scenario scenario() {
@@ -85,6 +93,14 @@ public final class World implements AutoCloseable {
         return plant;
     }
 
+    public SimSensors sensors() {
+        return sensors;
+    }
+
+    public LynxBus bus() {
+        return bus;
+    }
+
     public SimMotor leftMotor() {
         return leftMotor;
     }
@@ -110,8 +126,12 @@ public final class World implements AutoCloseable {
         return camera;
     }
 
-    public NoopTelemetry telemetry() {
+    public SimTelemetry telemetry() {
         return telemetry;
+    }
+
+    public DriverStation driverStation() {
+        return driverStation;
     }
 
     public StimulusTimeline stimulus() {
@@ -122,16 +142,18 @@ public final class World implements AutoCloseable {
         return actuation;
     }
 
-    /** Start plant, camera capture and stimulus. */
+    /** Start plant, camera capture, DS link and stimulus. */
     public void start() {
         plant.start();
         if (camera != null) camera.start();
+        driverStation.start();
         stimulus.start();
     }
 
     @Override
     public void close() {
         stimulus.close();
+        driverStation.close();
         if (camera != null) camera.close();
         plant.close();
     }
