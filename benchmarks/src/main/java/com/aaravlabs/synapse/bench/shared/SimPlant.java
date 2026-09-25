@@ -41,6 +41,8 @@ public final class SimPlant implements AutoCloseable {
     public volatile double headingBias;
 
     // ---- integrator state (written by the physics thread) -----------------
+    /** Sim clock in nanos; the sensor layer keys its noise/dropout process off this. */
+    public volatile long simNanos;
     public volatile double leftWheelVel;
     public volatile double rightWheelVel;
     public volatile double x;
@@ -91,6 +93,7 @@ public final class SimPlant implements AutoCloseable {
     }
 
     private void step(long simNanos) {
+        this.simNanos = simNanos;
         double lp = clampPower(leftPower);
         double rp = clampPower(rightPower);
         double ip = clampPower(intakePower);

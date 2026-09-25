@@ -135,10 +135,10 @@ public final class Compare {
                                         List<MetricRef> metrics, List<String> missing) {
         Map<String, Object> blat = (Map<String, Object>) b.get("latencyActuationNs");
         Map<String, Object> llat = (Map<String, Object>) l.get("latencyActuationNs");
-        for (String p : new String[] {"p50", "p90", "p99", "max"}) {
+        for (String p : new String[] {"p50", "p90", "p99", "p999", "max"}) {
             double bv = num(blat == null ? null : blat.get(p));
             if (bv <= 0) {
-                missing.add(key + ".latencyActuationNs." + p);
+                if (blat != null && blat.containsKey(p)) missing.add(key + ".latencyActuationNs." + p);
                 continue;
             }
             if (!(llat != null && llat.get(p) instanceof Number)) {

@@ -196,7 +196,7 @@ public final class RawMtS3 extends OpMode implements PairRunner {
             lastHeading = now;
             headingMeter.tick(now);
             double target = world.setpoints().headingTargetAt(now) + world.plant().headingBias;
-            double corr = headingPidf.update(world.plant().heading, target, now);
+            double corr = headingPidf.update(world.sensors().heading(), target, now);
             world.leftMotor().setPower(stickY - corr);
             world.rightMotor().setPower(stickRightY + corr);
         }
@@ -205,7 +205,7 @@ public final class RawMtS3 extends OpMode implements PairRunner {
             lastLift = now;
             liftMeter.tick(now);
             double target = world.setpoints().liftTargetAt(now);
-            double power = liftPidf.update(world.plant().liftPos, target, now);
+            double power = liftPidf.update(world.sensors().liftPos(), target, now);
             world.liftMotor().setPower(power);
         }
 
@@ -240,8 +240,8 @@ public final class RawMtS3 extends OpMode implements PairRunner {
         if (now - lastTelemetry >= TELEMETRY_PERIOD_NANOS) {
             lastTelemetry = now;
             telemetryMeter.tick(now);
-            telemetry.addData("lift", world.plant().liftPos);
-            telemetry.addData("heading", world.plant().heading);
+            telemetry.addData("lift", world.sensors().liftPos());
+            telemetry.addData("heading", world.sensors().heading());
             telemetry.update();
         }
     }

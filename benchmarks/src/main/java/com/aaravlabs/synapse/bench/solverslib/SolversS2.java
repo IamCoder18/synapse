@@ -98,7 +98,7 @@ public final class SolversS2 implements PairRunner {
             if (now - lastTelemetry >= TELEMETRY_PERIOD_NANOS) {
                 lastTelemetry = now;
                 telemetryMeter.tick(now);
-                world.telemetry().addData("lift", world.plant().liftPos);
+                world.telemetry().addData("lift", world.sensors().liftPos());
                 world.telemetry().update();
             }
         }
@@ -139,7 +139,7 @@ public final class SolversS2 implements PairRunner {
             last = now;
             liftMeter.tick(now);
             double target = world.setpoints().liftTargetAt(now);
-            setPower(liftPidf.update(world.plant().liftPos, target, now));
+            setPower(liftPidf.update(world.sensors().liftPos(), target, now));
         }
     }
 

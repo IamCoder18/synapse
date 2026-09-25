@@ -117,7 +117,7 @@ public final class SynapseS3 implements PairRunner {
             headingMeter.tick();
             long now = System.nanoTime();
             double target = world.setpoints().headingTargetAt(now) + world.plant().headingBias;
-            double corr = headingPidf.update(world.plant().heading, target, now);
+            double corr = headingPidf.update(world.sensors().heading(), target, now);
             world.leftMotor().setPower(cmdY - corr);
             world.rightMotor().setPower(cmdRightY + corr);
         }
@@ -134,7 +134,7 @@ public final class SynapseS3 implements PairRunner {
             liftMeter.tick();
             long now = System.nanoTime();
             double target = world.setpoints().liftTargetAt(now);
-            double power = liftPidf.update(world.plant().liftPos, target, now);
+            double power = liftPidf.update(world.sensors().liftPos(), target, now);
             world.liftMotor().setPower(power);
         }
     }
@@ -241,7 +241,7 @@ public final class SynapseS3 implements PairRunner {
         public void publishTelemetry() {
             metrics.countLoopIteration();
             telemetryMeter.tick();
-            orchestrator.publish("telemetry/lift", world.plant().liftPos);
+            orchestrator.publish("telemetry/lift", world.sensors().liftPos());
             world.telemetry().update();
         }
     }

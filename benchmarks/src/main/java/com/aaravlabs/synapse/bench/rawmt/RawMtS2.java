@@ -138,7 +138,7 @@ public final class RawMtS2 extends OpMode implements PairRunner {
             lastLift = now;
             liftMeter.tick(now);
             double target = world.setpoints().liftTargetAt(now);
-            double power = liftPidf.update(world.plant().liftPos, target, now);
+            double power = liftPidf.update(world.sensors().liftPos(), target, now);
             world.liftMotor().setPower(power);
         }
 
@@ -167,7 +167,7 @@ public final class RawMtS2 extends OpMode implements PairRunner {
         if (now - lastTelemetry >= TELEMETRY_PERIOD_NANOS) {
             lastTelemetry = now;
             telemetryMeter.tick(now);
-            telemetry.addData("lift", world.plant().liftPos);
+            telemetry.addData("lift", world.sensors().liftPos());
             telemetry.addData("align", alignOffset);
             telemetry.update();
         }
