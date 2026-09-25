@@ -141,6 +141,7 @@ public final class Main {
             }
             Map<String, Object> merged = mergeForks(forks, cfg);
             writeOutputs(cfg, merged);
+            printLadder(merged);
             return gateExit(merged);
         }
 
@@ -247,6 +248,12 @@ public final class Main {
     }
 
     private static List<String> filterStyles(List<String> available, List<String> wanted) {
+        for (String w : wanted) {
+            if (!available.contains(w)) {
+                throw new IllegalArgumentException(
+                        "requested style '" + w + "' is not available for this scenario");
+            }
+        }
         List<String> out = new ArrayList<>();
         for (String s : available) {
             if (wanted.contains(s)) out.add(s);
