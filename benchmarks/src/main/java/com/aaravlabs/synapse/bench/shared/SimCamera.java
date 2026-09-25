@@ -20,6 +20,14 @@ public final class SimCamera implements AutoCloseable {
         public final byte[] buf = new byte[SyntheticVisionPipeline.WIDTH * SyntheticVisionPipeline.HEIGHT];
         public volatile long seq = -1;
         public volatile long tNanos;
+
+        public Frame copy() {
+            Frame f = new Frame();
+            System.arraycopy(buf, 0, f.buf, 0, buf.length);
+            f.seq = seq;
+            f.tNanos = tNanos;
+            return f;
+        }
     }
 
     private final Frame[] ring = new Frame[RING];

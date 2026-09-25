@@ -242,16 +242,31 @@ public final class MicroBench {
         for (Thread t : threads) t.start();
         try {
             Thread.sleep(200);
-            long ops0 = published.get();
-            long t0 = System.nanoTime();
-            Thread.sleep((long) Math.max(200, measureOps / 5000.0));
-            long ops1 = published.get();
-            long t1 = System.nanoTime();
+            Hist hist = new Hist();
+            long totalOps = 0;
+            long totalNanos = 0;
+            long budgetMs = (long) Math.max(200, measureOps / 5000.0);
+            int intervals = (int) Math.max(8, Math.min(40, budgetMs / 50));
+            for (int i = 0; i < intervals; i++) {
+                long ops0 = published.get();
+                long t0 = System.nanoTime();
+                Thread.sleep(50);
+                long ops1 = published.get();
+                long t1 = System.nanoTime();
+                long ops = ops1 - ops0;
+                if (ops > 0) {
+                    long ns = t1 - t0;
+                    hist.record(ns / ops);
+                    totalOps += ops;
+                    totalNanos += ns;
+                }
+            }
             run.set(false);
             for (Thread t : threads) t.join(500);
-            double nsPerOp = (t1 - t0) / (double) Math.max(1, ops1 - ops0);
+            double nsPerOp = totalOps > 0 ? (double) totalNanos / totalOps : 0.0;
+            Hist.Snapshot s = hist.snapshot();
             Blackhole.consume(consumed.get());
-            return new Result(name, nsPerOp, (long) nsPerOp, (long) nsPerOp, ops1 - ops0);
+            return new Result(name, nsPerOp, s.p50, s.p99, totalOps);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             run.set(false);

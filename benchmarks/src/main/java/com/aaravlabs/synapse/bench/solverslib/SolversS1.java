@@ -57,7 +57,7 @@ public final class SolversS1 implements PairRunner {
         telemetrySubsystem = new TelemetrySubsystem();
 
         CommandScheduler.getInstance().setDefaultCommand(drive, new RunCommand(() -> {
-            drive.setPower(gamepadEx.getLeftY(), gamepadEx.getRightY());
+            drive.setPower(gamepadEx.getLeftY(), -gamepadEx.getRightY());
         }, drive));
 
         gamepadEx.getGamepadButton(GamepadKeys.Button.RIGHT_BUMPER).whenPressed(new InstantCommand(() -> {

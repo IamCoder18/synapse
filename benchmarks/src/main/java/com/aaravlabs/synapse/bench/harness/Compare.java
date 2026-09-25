@@ -136,13 +136,16 @@ public final class Compare {
         Map<String, Object> blat = (Map<String, Object>) b.get("latencyActuationNs");
         Map<String, Object> llat = (Map<String, Object>) l.get("latencyActuationNs");
         for (String p : new String[] {"p50", "p90", "p99", "max"}) {
-            double bv = num(blat.get(p));
-            double lv = num(llat.get(p));
+            double bv = num(blat == null ? null : blat.get(p));
             if (bv <= 0) {
                 missing.add(key + ".latencyActuationNs." + p);
                 continue;
             }
-            metrics.add(new MetricRef(key + ".latency." + p, bv, lv, true));
+            if (!(llat != null && llat.get(p) instanceof Number)) {
+                missing.add(key + ".latencyActuationNs." + p);
+                continue;
+            }
+            metrics.add(new MetricRef(key + ".latency." + p, bv, num(llat.get(p)), true));
         }
 
         Map<String, Object> brates = (Map<String, Object>) b.get("taskRates");
@@ -156,14 +159,20 @@ public final class Compare {
                 continue;
             }
             double bHz = num(br.get("achievedHz"));
-            double lHz = num(lr.get("achievedHz"));
             if (bHz > 0) {
-                metrics.add(new MetricRef(key + "." + task + ".achievedHz", bHz, lHz, false));
+                if (!(lr.get("achievedHz") instanceof Number)) {
+                    missing.add(key + ".taskRates." + task + ".achievedHz");
+                } else {
+                    metrics.add(new MetricRef(key + "." + task + ".achievedHz", bHz, num(lr.get("achievedHz")), false));
+                }
             }
             double bJ = num(br.get("jitterP99Ns"));
-            double lJ = num(lr.get("jitterP99Ns"));
             if (bJ > 0) {
-                metrics.add(new MetricRef(key + "." + task + ".jitterP99Ns", bJ, lJ, true));
+                if (!(lr.get("jitterP99Ns") instanceof Number)) {
+                    missing.add(key + ".taskRates." + task + ".jitterP99Ns");
+                } else {
+                    metrics.add(new MetricRef(key + "." + task + ".jitterP99Ns", bJ, num(lr.get("jitterP99Ns")), true));
+                }
             }
         }
 
@@ -171,9 +180,12 @@ public final class Compare {
         Map<String, Object> ltr = (Map<String, Object>) l.getOrDefault("trackingError", Map.of());
         for (String p : new String[] {"liftRmse", "headingRmse"}) {
             double bv = num(btr.get(p));
-            double lv = num(ltr.getOrDefault(p, 0));
             if (bv > 0) {
-                metrics.add(new MetricRef(key + "." + p, bv, lv, true));
+                if (!(ltr.get(p) instanceof Number)) {
+                    missing.add(key + "." + p);
+                    continue;
+                }
+                metrics.add(new MetricRef(key + "." + p, bv, num(ltr.get(p)), true));
             }
         }
 

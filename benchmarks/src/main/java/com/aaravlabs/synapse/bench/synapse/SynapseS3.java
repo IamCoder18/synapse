@@ -63,7 +63,7 @@ public final class SynapseS3 implements PairRunner {
         orchestrator.registerNode("telemetry", new TelemetryNode(orchestrator));
         GamepadAdaptor.attach(orchestrator, world.gamepad1(), "g1");
         GamepadAdaptor.attach(orchestrator, world.gamepad2(), "g2");
-        world.camera().setListener(frame -> orchestrator.publish("camera/frame", frame));
+        world.camera().setListener(frame -> orchestrator.publish("camera/frame", frame.copy()));
     }
 
     @Override

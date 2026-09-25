@@ -162,7 +162,7 @@ public final class SolversS2 implements PairRunner {
             if (now - last < DRIVE_PERIOD_NANOS) return;
             last = now;
             driveMeter.tick(now);
-            drive.drive(gamepad1Ex.getLeftY(), gamepad1Ex.getRightY(), gamepad1Ex.getLeftX(), alignOffset);
+            drive.drive(gamepad1Ex.getLeftY(), -gamepad1Ex.getRightY(), gamepad1Ex.getLeftX(), alignOffset);
         }
 
         @Override

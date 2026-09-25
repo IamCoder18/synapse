@@ -233,6 +233,7 @@ public final class Main {
         metrics.startWindow();
         Thread.sleep(cfg.measureMs());
         metrics.endWindow();
+        runner.stop();
         world.plant().freezeTracking();
         double liftRmse = world.plant().liftRmse();
         double headingRmse = world.plant().headingRmse();
@@ -240,7 +241,6 @@ public final class Main {
         List<Metrics.TaskSnapshot> tasks = metrics.taskSnapshots();
         double loopHz = metrics.loopHz();
         double alloc = metrics.allocBytesPerSec();
-        runner.stop();
         world.close();
         return Report.Pair.fromSnapshot(scenario.name(), style, latency, tasks,
                 liftRmse, headingRmse, loopHz, alloc);

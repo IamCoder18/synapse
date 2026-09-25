@@ -23,7 +23,7 @@ public enum Scenario {
     }
 
     public boolean hasServo() {
-        return this != S0_MinimalDrive;
+        return this == S1_BasicTeleop;
     }
 
     public boolean hasIntake() {
