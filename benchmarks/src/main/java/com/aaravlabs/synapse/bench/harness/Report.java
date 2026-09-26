@@ -244,6 +244,8 @@ public final class Report {
         sb.append("  so the load profile is machine-independent while absolute times are real.\n");
         sb.append("- Axis sign conventions differ by framework API (raw fields vs GamepadEx);\n");
         sb.append("  workload shape (reads + arithmetic + writes) is identical across styles.\n");
+        sb.append("- Lynx bus, DS packet link, sensor quantization/noise/dropouts, and small-heap\n");
+        sb.append("  GC pressure are modeled Control-Hub-class structure, not mock overhead.\n");
         sb.append("- See `benchmarks/README.md` for methodology and fairness rules.\n");
         return sb.toString();
     }

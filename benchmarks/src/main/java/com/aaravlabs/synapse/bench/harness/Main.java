@@ -235,8 +235,8 @@ public final class Main {
         metrics.startWindow();
         Thread.sleep(cfg.measureMs());
         metrics.endWindow();
-        runner.stop();
         world.plant().freezeTracking();
+        runner.stop();
         double liftRmse = world.plant().liftRmse();
         double headingRmse = world.plant().headingRmse();
         Hist.Snapshot latency = metrics.probeSnapshot("actuation");

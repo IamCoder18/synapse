@@ -88,6 +88,9 @@ public final class MicroBench {
         out.put("micro.gamepad.adaptorPoll", batch("micro.gamepad.adaptorPoll", this::gamepadAdaptorPoll));
         out.putAll(solverslibBenches());
         out.put("micro.sim.deviceWrite", batch("micro.sim.deviceWrite", this::simDeviceWrite));
+        out.put("micro.sim.busWrite", batch("micro.sim.busWrite", this::simBusWrite));
+        out.put("micro.sim.busRead", batch("micro.sim.busRead", this::simBusRead));
+        out.put("micro.sim.busBulkRead2", batch("micro.sim.busBulkRead2", this::simBusBulkRead2));
         return out;
     }
 
@@ -395,6 +398,24 @@ public final class MicroBench {
         holder.motor.setPower(1.0);
         return 1;
     }
+
+    private long simBusWrite() {
+        simBus.write();
+        return 1;
+    }
+
+    private long simBusRead() {
+        simBus.read();
+        return 1;
+    }
+
+    private long simBusBulkRead2() {
+        simBus.bulkRead(2);
+        return 1;
+    }
+
+    private final com.aaravlabs.synapse.bench.shared.LynxBus simBus =
+            new com.aaravlabs.synapse.bench.shared.LynxBus();
 
     private static final class SimDeviceHolder {
         final SimPlant plant;

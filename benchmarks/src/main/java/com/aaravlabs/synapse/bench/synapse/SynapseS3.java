@@ -241,7 +241,11 @@ public final class SynapseS3 implements PairRunner {
         public void publishTelemetry() {
             metrics.countLoopIteration();
             telemetryMeter.tick();
-            orchestrator.publish("telemetry/lift", world.sensors().liftPos());
+            double lift = world.sensors().liftPos();
+            double heading = world.sensors().heading();
+            orchestrator.publish("telemetry/lift", lift);
+            world.telemetry().addData("lift", lift);
+            world.telemetry().addData("heading", heading);
             world.telemetry().update();
         }
     }

@@ -106,15 +106,20 @@ Automated and enforced by `run`, `verifyFrameworkClasses`, `verifyMockBudget`:
    project output — and **never** from `benchmarks/build/classes` (which would mean
    a vendored reimplementation). A smoke dispatch (Orchestrator + GamepadAdaptor +
    CommandScheduler.run()) must execute.
-2. **Mock budget.** `micro.sim.deviceWrite` measures `SimMotor.setPower` *as used
-   on the measured path* (volatile plant write + `System.nanoTime()` + the
-   latency-probe pairing). It must cost **&lt; 5 % of the smallest framework-level
-   dispatch measurement** — here the end-to-end paths the device write sits inside:
-   `micro.publish.subscribers{1,8}`, `micro.publish.annotationSubscriber`,
-   `micro.hardware.run`, `micro.hardware.call`. Local primitive micros
-   (`recordLatest`, `schedulerRun`, `buttonRead`) are optimization targets and
-   deliberately not budget references: they contain no dispatch hop for the mock
-   to hide in. Current budget use ≈ 1 %.
+2. **Mock budget.** `micro.sim.deviceWrite` measures `SimMotor.setPower`
+   *the mock bookkeeping* — the volatile plant write + `System.nanoTime()` +
+   the latency-probe pairing — and must cost **< 5 % of the smallest
+   framework-level dispatch measurement** (`micro.publish.subscribers{1,8}`,
+   `micro.publish.annotationSubscriber`, `micro.hardware.run`,
+   `micro.hardware.call`). Local primitive micros (`recordLatest`,
+   `schedulerRun`, `buttonRead`) are optimization targets and deliberately not
+   budget references: they contain no dispatch hop for the mock to hide in.
+   The modeled Lynx bus transfer (`LynxBus.WRITE_NANOS`, `READ_NANOS`,
+   `BULK_*`) is layered onto device writes *separately* on the scenario path;
+   it is intentional hardware latency, not mock noise, so it is excluded from
+   this gate. Its cost is reported transparently under
+   `micro.sim.busWrite`, `micro.sim.busRead`, and `micro.sim.busBulkRead2`
+   in the micro table. Current mock-budget use ≈ 1–2 %.
 3. **Structural review rule** (checked automatically and by reviewers):
    `shared/` contains zero `com.aaravlabs.synapse.*` / `com.seattlesolvers.solverslib.*`
    dispatch types, and style packages contain zero classes named like
