@@ -14,6 +14,7 @@ public final class TaskMeter {
     private long last;
     private long count;
     private long firstTick;
+    private long missed;
 
     public TaskMeter(String name, double targetHz) {
         this.name = name;
@@ -37,6 +38,7 @@ public final class TaskMeter {
         last = 0;
         count = 0;
         firstTick = 0;
+        missed = 0;
     }
 
     public void tick() {
@@ -46,13 +48,24 @@ public final class TaskMeter {
     public void tick(long now) {
         if (!recording) return;
         if (firstTick == 0) firstTick = now;
-        if (last != 0) periods.record(now - last);
+        if (last != 0) {
+            long period = now - last;
+            periods.record(period);
+            if (targetHz > 0 && period > 1.5e9 / targetHz) missed++;
+        }
         last = now;
         count++;
     }
 
     public long count() {
         return count;
+    }
+
+    /** Fraction of observed periods that exceeded 1.5× the target period. */
+    public double deadlineMissPct() {
+        long periodsSeen = count > 0 ? count - 1 : 0;
+        if (periodsSeen == 0) return 0.0;
+        return 100.0 * missed / periodsSeen;
     }
 
     public Hist.Snapshot periodSnapshot() {

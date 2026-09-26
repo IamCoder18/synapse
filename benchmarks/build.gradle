@@ -55,7 +55,9 @@ application {
 
 tasks.named('run', JavaExec) {
     dependsOn 'extractSolverslib'
-    jvmArgs '-Xms512m', '-Xmx2g'
+    // Control-Hub-class heap: small young gen so message-path allocation
+    // produces real young GCs that show up in the actuation tail.
+    jvmArgs '-Xms128m', '-Xmx256m', '-Xmn16m'
     if (project.hasProperty('benchArgs')) {
         args project.property('benchArgs').toString().split('\\s+')
     }

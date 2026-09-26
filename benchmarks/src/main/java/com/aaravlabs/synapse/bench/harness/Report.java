@@ -28,13 +28,17 @@ public final class Report {
         public final Map<String, Object> trackingError;
         public final double loopHz;
         public final double allocBytesPerSec;
+        public final long gcCount;
+        public final long gcMillis;
 
         public Pair(String scenario, String style,
                     Map<String, Object> latencyActuationNs,
                     Map<String, Object> taskRates,
                     Map<String, Object> trackingError,
                     double loopHz,
-                    double allocBytesPerSec) {
+                    double allocBytesPerSec,
+                    long gcCount,
+                    long gcMillis) {
             this.scenario = scenario;
             this.style = style;
             this.latencyActuationNs = latencyActuationNs;
@@ -42,6 +46,8 @@ public final class Report {
             this.trackingError = trackingError;
             this.loopHz = loopHz;
             this.allocBytesPerSec = allocBytesPerSec;
+            this.gcCount = gcCount;
+            this.gcMillis = gcMillis;
         }
 
         public static Pair fromSnapshot(String scenario, String style,
@@ -50,11 +56,14 @@ public final class Report {
                                         double liftRmse,
                                         double headingRmse,
                                         double loopHz,
-                                        double allocBytesPerSec) {
+                                        double allocBytesPerSec,
+                                        long gcCount,
+                                        long gcMillis) {
             Map<String, Object> lat = new LinkedHashMap<>();
             lat.put("p50", latency.p50);
             lat.put("p90", latency.p90);
             lat.put("p99", latency.p99);
+            lat.put("p999", latency.p999);
             lat.put("max", latency.max);
             lat.put("min", latency.min);
             lat.put("mean", latency.mean);
@@ -66,6 +75,8 @@ public final class Report {
                 entry.put("targetHz", t.targetHz);
                 entry.put("achievedHz", t.achievedHz);
                 entry.put("jitterP99Ns", t.jitterP99Ns);
+                entry.put("jitterP999Ns", t.jitterP999Ns);
+                entry.put("deadlineMissPct", t.deadlineMissPct);
                 entry.put("count", t.count);
                 rates.put(t.name, entry);
             }
@@ -74,7 +85,8 @@ public final class Report {
             tracking.put("liftRmse", liftRmse);
             tracking.put("headingRmse", headingRmse);
 
-            return new Pair(scenario, style, lat, rates, tracking, loopHz, allocBytesPerSec);
+            return new Pair(scenario, style, lat, rates, tracking, loopHz, allocBytesPerSec,
+                    gcCount, gcMillis);
         }
 
         public Map<String, Object> toMap() {
@@ -86,6 +98,8 @@ public final class Report {
             m.put("trackingError", trackingError);
             m.put("loopHz", loopHz);
             m.put("allocBytesPerSec", allocBytesPerSec);
+            m.put("gcCount", gcCount);
+            m.put("gcMillis", gcMillis);
             return m;
         }
 
@@ -98,7 +112,9 @@ public final class Report {
                     (Map<String, Object>) m.get("taskRates"),
                     (Map<String, Object>) m.get("trackingError"),
                     ((Number) m.getOrDefault("loopHz", 0)).doubleValue(),
-                    ((Number) m.getOrDefault("allocBytesPerSec", 0)).doubleValue());
+                    ((Number) m.getOrDefault("allocBytesPerSec", 0)).doubleValue(),
+                    ((Number) m.getOrDefault("gcCount", 0)).longValue(),
+                    ((Number) m.getOrDefault("gcMillis", 0)).longValue());
         }
     }
 
@@ -145,7 +161,8 @@ public final class Report {
         sb.append("- git: ").append(env.get("gitSha")).append('\n');
         sb.append("- timestamp: ").append(env.get("timestamp")).append('\n');
         sb.append("\n## Scenario ladder\n\n");
-        sb.append("| scenario | style | actuation p50 (ns) | actuation p99 (ns) | lift RMSE | heading RMSE | loopHz |");
+        sb.append("| scenario | style | actuation p50 (ns) | actuation p99 (ns) | actuation p99.9 (ns) |");
+        sb.append(" max task miss % | lift RMSE | heading RMSE | loopHz | GC ms |");
         Map<String, Object> firstRates = new LinkedHashMap<>();
         List<Object> scenarios = (List<Object>) doc.get("scenarios");
         for (Object o : scenarios) {
@@ -160,7 +177,7 @@ public final class Report {
             sb.append(' ').append(k).append(" Hz |");
         }
         sb.append('\n');
-        sb.append("| --- | --- | ---: | ---: | ---: | ---: | ---: |");
+        sb.append("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |");
         for (int i = 0; i < firstRates.size(); i++) sb.append(" ---: |");
         sb.append('\n');
         for (Object o : scenarios) {
@@ -168,13 +185,25 @@ public final class Report {
             Map<String, Object> lat = (Map<String, Object>) p.get("latencyActuationNs");
             Map<String, Object> tracking = (Map<String, Object>) p.get("trackingError");
             Map<String, Object> rates = (Map<String, Object>) p.get("taskRates");
+            double maxMiss = 0;
+            for (Object k : firstRates.keySet()) {
+                Map<String, Object> rate = (Map<String, Object>) rates.get(k);
+                if (rate == null) continue;
+                Object miss = rate.get("deadlineMissPct");
+                if (miss instanceof Number) {
+                    maxMiss = Math.max(maxMiss, ((Number) miss).doubleValue());
+                }
+            }
             sb.append("| ").append(p.get("scenario"))
                     .append(" | ").append(p.get("style"))
                     .append(" | ").append(fmt(lat.get("p50")))
                     .append(" | ").append(fmt(lat.get("p99")))
+                    .append(" | ").append(fmt(lat.get("p999")))
+                    .append(" | ").append(fmt(maxMiss))
                     .append(" | ").append(fmt(tracking.get("liftRmse")))
                     .append(" | ").append(fmt(tracking.get("headingRmse")))
-                    .append(" | ").append(fmt(p.get("loopHz")));
+                    .append(" | ").append(fmt(p.get("loopHz")))
+                    .append(" | ").append(fmt(p.get("gcMillis")));
             for (Object k : firstRates.keySet()) {
                 Map<String, Object> rate = (Map<String, Object>) rates.get(k);
                 sb.append(" | ").append(rate == null ? "—" : fmt(rate.get("achievedHz")));
@@ -215,6 +244,8 @@ public final class Report {
         sb.append("  so the load profile is machine-independent while absolute times are real.\n");
         sb.append("- Axis sign conventions differ by framework API (raw fields vs GamepadEx);\n");
         sb.append("  workload shape (reads + arithmetic + writes) is identical across styles.\n");
+        sb.append("- Lynx bus, DS packet link, sensor quantization/noise/dropouts, and small-heap\n");
+        sb.append("  GC pressure are modeled Control-Hub-class structure, not mock overhead.\n");
         sb.append("- See `benchmarks/README.md` for methodology and fairness rules.\n");
         return sb.toString();
     }
