@@ -51,8 +51,8 @@ truth. Treat every number here as a ratio on this box, never as an absolute.
 
 | metric | how it is recorded |
 | --- | --- |
-| input→actuation latency | `LatencyProbe`: the stimulus thread stamps t0 immediately before flipping a `Gamepad` volatile field and declares the expected power direction (mapped per style sign convention); `SimMotor.setPower`/`SimServo.setPosition` stamp t1 **inside the framework-invoked device write** and the first write whose power crosses a threshold in that direction pairs with it (stick steps alternate sign, so stale writes cannot pair). Reported p50/p90/p99/max. |
-| per-task rate + jitter | `TaskMeter.tick()` at the top of each periodic body the framework invokes (`loop()` body, `Command.execute()`/`Subsystem.periodic()`, `@RunPeriodically` method): achieved Hz vs target Hz and p99 inter-tick period. |
+| input→actuation latency | `LatencyProbe`: the stimulus stamp t0 is taken inside a `DriverStation` packet callback the moment a queued gamepad mutation is flushed at the next ~25 ms packet boundary, with the expected power direction (mapped per style sign convention). `SimMotor.setPower`/`SimServo.setPosition` stamp t1 **inside the framework-invoked device write** and the first write whose power crosses a threshold in that direction pairs with it (stick steps alternate sign, so stale writes cannot pair). Reported p50/p90/p99/p99.9/max. |
+| per-task rate + jitter | `TaskMeter.tick()` at the top of each periodic body the framework invokes (`loop()` body, `Command.execute()`/`Subsystem.periodic()`, `@RunPeriodically` method): achieved Hz vs target Hz, p99 / p99.9 inter-tick period, and deadline-miss percentage (period > 1.5× target). |
 | control quality | `SimPlant` scores lift position and drivetrain heading against the same `Setpoints` trajectory plus `headingBias` the styles command — world-side bookkeeping, never inside a dispatch segment. |
 | loop throughput | framework pump iterations/s: the `while (active) { loop(); }` body for `raw`/`rawmt`, one `CommandScheduler.run()` call for `solverslib`, and every framework-invoked handler body (`@RunPeriodically`, `@SubscribedTo`, `@RunnableAction`) for `synapse` — its "scheduler ticks", since it has no single pump |
 | allocation rate | optional (`--alloc`): `com.sun.management.ThreadMXBean` bytes/s summed across all live threads (the measured style threads included). |
@@ -75,7 +75,16 @@ harness, not the framework.
    requirements-based command conflicts; Synapse nodes/annotations/topics/actions).
    There is no shared "robot program" abstraction.
 3. **The world is not a framework.** `shared/` has zero Synapse/SolversLib dispatch
-   types (gate 3). Device writes are constant-cost volatile stores into `SimPlant`.
+   types (gate 3). Device writes pay **serialized `LynxBus` transfer cost**
+   (write ≈ 3 µs spin under a shared lock, read ≈ 5 µs, bulk read of two
+   registers ≈ 6 µs) plus the volatile store into `SimPlant`; the bus is a
+   single shared link so RawMt's multiple threads pay contention, and bulk reads
+   are cheaper than the same reads one-at-a-time. The mock-budget gate measures
+   only the device-write mock bookkeeping against framework dispatch; the bus
+   cost is modeled hardware and is reported transparently as
+   `micro.sim.bus{Write,Read,BulkRead2}`. Sensor reads (lift, heading) are
+   quantized, carry correlated noise keyed off the plant sim clock, and
+   occasionally drop out by returning the last good sample.
 4. **Real code on the measured path.** Synapse runs the real `OrchestratorImpl`
    dispatch, `AnnotationBinder` reflective invoke, `GamepadAdaptor.poll()`,
    `HardwareActions.run/call`, `Topic` synchronization. SolversLib runs the real
