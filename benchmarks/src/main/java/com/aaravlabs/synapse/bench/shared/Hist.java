@@ -13,15 +13,17 @@ public final class Hist {
         public final long p50;
         public final long p90;
         public final long p99;
+        public final long p999;
         public final long max;
         public final long min;
         public final double mean;
         public final long count;
 
-        Snapshot(long p50, long p90, long p99, long max, long min, double mean, long count) {
+        Snapshot(long p50, long p90, long p99, long p999, long max, long min, double mean, long count) {
             this.p50 = p50;
             this.p90 = p90;
             this.p99 = p99;
+            this.p999 = p999;
             this.max = max;
             this.min = min;
             this.mean = mean;
@@ -29,7 +31,7 @@ public final class Hist {
         }
 
         public static Snapshot empty() {
-            return new Snapshot(0, 0, 0, 0, 0, 0.0, 0);
+            return new Snapshot(0, 0, 0, 0, 0, 0, 0.0, 0);
         }
     }
 
@@ -71,6 +73,7 @@ public final class Hist {
                 percentile(copy, 0.50),
                 percentile(copy, 0.90),
                 percentile(copy, 0.99),
+                percentile(copy, 0.999),
                 copy[copy.length - 1],
                 copy[0],
                 ((double) sum) / count,

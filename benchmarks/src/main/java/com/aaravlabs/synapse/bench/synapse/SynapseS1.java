@@ -125,7 +125,9 @@ public final class SynapseS1 implements PairRunner {
         public void publishTelemetry() {
             metrics.countLoopIteration();
             telemetryMeter.tick();
-            orchestrator.publish("telemetry/servo", world.servo().getPosition());
+            double servo = world.servo().getPosition();
+            orchestrator.publish("telemetry/servo", servo);
+            world.telemetry().addData("servo", servo);
             world.telemetry().update();
         }
     }

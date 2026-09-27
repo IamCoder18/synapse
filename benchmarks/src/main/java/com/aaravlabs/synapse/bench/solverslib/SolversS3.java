@@ -116,8 +116,8 @@ public final class SolversS3 implements PairRunner {
             if (now - lastTelemetry >= TELEMETRY_PERIOD_NANOS) {
                 lastTelemetry = now;
                 telemetryMeter.tick(now);
-                world.telemetry().addData("lift", world.plant().liftPos);
-                world.telemetry().addData("heading", world.plant().heading);
+                world.telemetry().addData("lift", world.sensors().liftPos());
+                world.telemetry().addData("heading", world.sensors().heading());
                 world.telemetry().update();
             }
         }
@@ -150,7 +150,7 @@ public final class SolversS3 implements PairRunner {
             last = now;
             liftMeter.tick(now);
             double target = world.setpoints().liftTargetAt(now);
-            world.liftMotor().setPower(liftPidf.update(world.plant().liftPos, target, now));
+            world.liftMotor().setPower(liftPidf.update(world.sensors().liftPos(), target, now));
         }
     }
 
@@ -164,7 +164,7 @@ public final class SolversS3 implements PairRunner {
             last = now;
             headingMeter.tick(now);
             double target = world.setpoints().headingTargetAt(now) + world.plant().headingBias;
-            double corr = headingPidf.update(world.plant().heading, target, now);
+            double corr = headingPidf.update(world.sensors().heading(), target, now);
             world.leftMotor().setPower(stickY - corr);
             world.rightMotor().setPower(stickRightY + corr);
         }

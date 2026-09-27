@@ -4,6 +4,8 @@ package com.aaravlabs.synapse.bench.shared;
  * Deterministic CPU work used for the scenario "expensive" kernels (auto-align,
  * slow debug logger). Busy-spins on real arithmetic for a fixed duration so the
  * load profile is machine-independent, and returns a stable blackhole sink.
+ * The slow logger additionally formats log lines (deliberate allocation) so GC
+ * pressure from a chatty message path lands in the actuation tail.
  */
 public final class BusyWork {
 
@@ -42,8 +44,22 @@ public final class BusyWork {
         return Math.sin(eventSeq * 0.37) * 4.0;
     }
 
-    /** Slow logger kernel: fixed-duration work per event. */
+    /**
+     * Slow logger kernel: fixed-duration work per event plus log-line
+     * formatting. The string building is the point — a real debug logger
+     * allocates, and those allocations are what push young collections into
+     * the measured tail under a small heap.
+     */
     public static void slowLog(long eventSeq) {
+        StringBuilder sb = new StringBuilder(256);
+        for (int i = 0; i < 8; i++) {
+            sb.setLength(0);
+            sb.append("state seq=").append(eventSeq)
+                    .append(" tick=").append(i)
+                    .append(" t=").append(System.nanoTime() / 1000)
+                    .append(" us payload=").append(eventSeq * 31 + i);
+            sink = sb.length();
+        }
         spinNanos(SLOW_LOGGER_NANOS);
         sink = eventSeq;
     }

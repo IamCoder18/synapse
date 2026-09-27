@@ -18,13 +18,18 @@ public final class Metrics {
         public final double targetHz;
         public final double achievedHz;
         public final long jitterP99Ns;
+        public final long jitterP999Ns;
+        public final double deadlineMissPct;
         public final long count;
 
-        TaskSnapshot(String name, double targetHz, double achievedHz, long jitterP99Ns, long count) {
+        TaskSnapshot(String name, double targetHz, double achievedHz, long jitterP99Ns,
+                     long jitterP999Ns, double deadlineMissPct, long count) {
             this.name = name;
             this.targetHz = targetHz;
             this.achievedHz = achievedHz;
             this.jitterP99Ns = jitterP99Ns;
+            this.jitterP999Ns = jitterP999Ns;
+            this.deadlineMissPct = deadlineMissPct;
             this.count = count;
         }
     }
@@ -41,6 +46,10 @@ public final class Metrics {
     private volatile boolean allocEnabled;
     private long allocStartBytes = -1;
     private long allocEndBytes = -1;
+    private long gcCountStart;
+    private long gcMsStart;
+    private long gcCountEnd;
+    private long gcMsEnd;
 
     public TaskMeter task(String name, double targetHz) {
         TaskMeter m = tasks.get(name);
@@ -84,6 +93,9 @@ public final class Metrics {
         }
         loopIterations.reset();
         if (allocEnabled) allocStartBytes = threadAllocated();
+        long[] gc = gcSample();
+        gcCountStart = gc[0];
+        gcMsStart = gc[1];
     }
 
     public void endWindow() {
@@ -91,6 +103,9 @@ public final class Metrics {
         for (TaskMeter m : snapshotTasks()) m.setRecording(false);
         for (LatencyProbe p : snapshotProbes()) p.setRecording(false);
         if (allocEnabled) allocEndBytes = threadAllocated();
+        long[] gc = gcSample();
+        gcCountEnd = gc[0];
+        gcMsEnd = gc[1];
     }
 
     public void countLoopIteration() {
@@ -112,11 +127,22 @@ public final class Metrics {
         return sec > 0 ? (allocEndBytes - allocStartBytes) / sec : 0.0;
     }
 
+    /** Young+old GC collections observed inside the measurement window. */
+    public long gcCount() {
+        return Math.max(0, gcCountEnd - gcCountStart);
+    }
+
+    /** Total GC pause milliseconds observed inside the measurement window. */
+    public long gcMillis() {
+        return Math.max(0, gcMsEnd - gcMsStart);
+    }
+
     public List<TaskSnapshot> taskSnapshots() {
         List<TaskSnapshot> out = new ArrayList<>();
         for (TaskMeter m : snapshotTasks()) {
             Hist.Snapshot s = m.periodSnapshot();
-            out.add(new TaskSnapshot(m.name(), m.targetHz(), m.achievedHz(), s.p99, m.count()));
+            out.add(new TaskSnapshot(m.name(), m.targetHz(), m.achievedHz(), s.p99, s.p999,
+                    m.deadlineMissPct(), m.count()));
         }
         return out;
     }
@@ -144,6 +170,19 @@ public final class Metrics {
         synchronized (orderedProbes) {
             return new ArrayList<>(orderedProbes);
         }
+    }
+
+    private static long[] gcSample() {
+        long count = 0;
+        long ms = 0;
+        for (java.lang.management.GarbageCollectorMXBean bean
+                : java.lang.management.ManagementFactory.getGarbageCollectorMXBeans()) {
+            long c = bean.getCollectionCount();
+            long t = bean.getCollectionTime();
+            if (c > 0) count += c;
+            if (t > 0) ms += t;
+        }
+        return new long[] {count, ms};
     }
 
     private long threadAllocated() {
