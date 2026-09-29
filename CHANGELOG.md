@@ -5,7 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
 ## [Unreleased]
+
+### Added
+- `PublishListener`: a pluggable hook notified synchronously on every
+  `Orchestrator.publish`, before subscriber dispatch. Intended for diagnostics --
+  recording, metrics, tracing -- which previously had no way to observe the bus
+  without reimplementing `publish`.
+
+  Registered with `addPublishListener` / `removePublishListener`, declared as
+  `default` methods so existing `Orchestrator` implementors and test doubles keep
+  compiling. Listeners run on the publishing thread, must not block, and are
+  called in registration order. A listener that throws is caught and logged, so
+  diagnostics can never break the bus. With no listeners registered, `publish`
+  costs a single volatile read.
 
 ### Changed
 

@@ -270,6 +270,32 @@ public interface Orchestrator extends AutoCloseable {
     @Override
     void close();
 
+    // ---- diagnostics -----------------------------------------------------
+
+    /**
+     * Registers a listener notified on every {@link #publish}, before subscriber
+     * dispatch. See {@link PublishListener} for the threading contract.
+     *
+     * <p>Listeners run on the publishing thread and must not block. Registering
+     * none leaves publish with a single volatile read, so this is cheap to leave
+     * enabled permanently.
+     *
+     * @param listener the listener; ignored if null
+     */
+    default void addPublishListener(PublishListener listener) {
+        throw new UnsupportedOperationException("publish listeners are not supported by this orchestrator");
+    }
+
+    /**
+     * Removes a previously registered listener. Does nothing if it was not
+     * registered.
+     *
+     * @param listener the listener to remove; ignored if null
+     */
+    default void removePublishListener(PublishListener listener) {
+        // no-op
+    }
+
     // ---- factories -------------------------------------------------------
 
     /**

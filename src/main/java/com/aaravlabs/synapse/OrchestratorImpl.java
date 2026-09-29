@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -202,6 +203,23 @@ public final class OrchestratorImpl implements Orchestrator {
         return Optional.of((Topic<T>) t);
     }
 
+    // ---- publish listeners ------------------------------------------------
+
+    // Copy-on-write: iteration happens on the publishing thread and must be
+    // lock-free, and registration is rare. A volatile read of the field is what
+    // keeps publish cheap when nobody is listening.
+    private final java.util.List<PublishListener> publishListeners = new CopyOnWriteArrayList<>();
+
+    @Override
+    public void addPublishListener(PublishListener listener) {
+        if (listener != null) publishListeners.add(listener);
+    }
+
+    @Override
+    public void removePublishListener(PublishListener listener) {
+        if (listener != null) publishListeners.remove(listener);
+    }
+
     // ---- publish ---------------------------------------------------------
 
     @Override
@@ -213,6 +231,23 @@ public final class OrchestratorImpl implements Orchestrator {
         }
         if (value == null) {
             throw new IllegalArgumentException("publish value cannot be null");
+        }
+
+        // One timestamp for every listener, taken before the type check so a
+        // listener never observes a later instant than the publish itself.
+        // Guarded so the common case -- nobody listening -- is one read.
+        java.util.List<PublishListener> listeners = publishListeners;
+        if (!listeners.isEmpty()) {
+            long now = System.nanoTime();
+            for (int i = 0, n = listeners.size(); i < n; i++) {
+                try {
+                    listeners.get(i).onPublish(topicName, value, now);
+                } catch (Throwable t) {
+                    // Diagnostics must never break the bus: log and carry on
+                    // so the remaining listeners and the subscribers still run.
+                    log.error(name, "publish listener threw", t);
+                }
+            }
         }
 
         // Lazily create the topic from the value's runtime type. This matches
