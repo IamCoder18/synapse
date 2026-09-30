@@ -97,7 +97,17 @@ public final class OrchestratorImpl implements Orchestrator {
         // (for hardware loops) go to the same executor / thread.
         this.hardwareThread = java.util.concurrent.Executors
                 .newSingleThreadScheduledExecutor(hwTf);
+
+        // Both facades are immutable one-field views over this orchestrator, so build
+        // them once here. `orchestrator.hardware()` is called per message by hot
+        // subscribers and used to allocate a fresh facade every time; the bulk-read
+        // view was likewise allocated per registration.
+        this.hardwareActions = new com.aaravlabs.synapse.ftc.HardwareActions(this);
+        this.hardwareView = new com.aaravlabs.synapse.ftc.HardwareView(this);
     }
+
+    private final com.aaravlabs.synapse.ftc.HardwareActions hardwareActions;
+    private final com.aaravlabs.synapse.ftc.HardwareView hardwareView;
 
     private volatile Thread hardwareThreadThread;
 
@@ -434,8 +444,7 @@ public final class OrchestratorImpl implements Orchestrator {
             int hz, com.aaravlabs.synapse.ftc.BulkReader reader) {
         if (hz <= 0) throw new IllegalArgumentException("hz must be > 0");
         long delayMs = Math.max(1, 1000L / hz);
-        com.aaravlabs.synapse.ftc.HardwareView view =
-                new com.aaravlabs.synapse.ftc.HardwareView(this);
+        com.aaravlabs.synapse.ftc.HardwareView view = hardwareView;
         ScheduledFuture<?> f = hardwareThread.scheduleWithFixedDelay(() -> {
             try {
                 reader.read(view);
@@ -447,8 +456,13 @@ public final class OrchestratorImpl implements Orchestrator {
     }
 
     @Override
+    /**
+     * @return the shared {@link com.aaravlabs.synapse.ftc.HardwareActions} facade for
+     *         this orchestrator. The same instance is returned on every call, so it is
+     *         safe to hold onto. (It was a fresh object per call before.)
+     */
     public com.aaravlabs.synapse.ftc.HardwareActions hardware() {
-        return new com.aaravlabs.synapse.ftc.HardwareActions(this);
+        return hardwareActions;
     }
 
     /** Package-private: used by the binder to schedule @RunPeriodically methods. */

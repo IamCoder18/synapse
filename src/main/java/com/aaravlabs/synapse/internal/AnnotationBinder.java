@@ -107,31 +107,25 @@ public final class AnnotationBinder {
         }
 
         Class<?> paramType = m.getParameterCount() == 1 ? m.getParameterTypes()[0] : null;
-        Class<?> topicType = paramType != null ? boxed(paramType) : Object.class;
+        // Hoisted out of the per-message path. The normalisation used to be
+        // recomputed on every delivered message, inside the
+        // `paramType.isPrimitive() ? boxed(paramType).isInstance(msg) : ...`
+        // conditional below. It is also exactly equivalent to that expression:
+        // `boxed` returns non-primitives unchanged, so both branches collapsed
+        // to the same check once normalised.
+        final Class<?> effectiveParam = paramType != null ? boxed(paramType) : null;
+        Class<?> topicType = effectiveParam != null ? effectiveParam : Object.class;
 
         m.setAccessible(true);
 
         boolean onHardware = m.isAnnotationPresent(OnHardwareThread.class);
-        Runnable handlerBody = () -> {
-            try {
-                // Body is invoked by the dispatcher (callback pool or hardware
-                // thread). We capture paramType via a closure.
-                // The actual subscription handler is built per-topic below.
-            } catch (Throwable t) {
-                orchestrator.error("@SubscribedTo handler threw: " + m, t);
-            }
-        };
-        // We don't actually use handlerBody above — each topic gets its own
-        // handler that captures its own message type. The annotation-present
-        // check is the only thing we need from here.
 
         for (SubscribedTo sub : subs) {
             Subscription s = orchestrator.subscribeRaw(sub.topic(), topicType, msg -> {
                 try {
-                    if (paramType == null) {
+                    if (effectiveParam == null) {
                         m.invoke(node);
-                    } else if (paramType.isPrimitive() ? boxed(paramType).isInstance(msg)
-                                                       : paramType.isInstance(msg)) {
+                    } else if (effectiveParam.isInstance(msg)) {
                         m.invoke(node, msg);
                     }
                     // else: silently drop — message type didn't match the parameter.
