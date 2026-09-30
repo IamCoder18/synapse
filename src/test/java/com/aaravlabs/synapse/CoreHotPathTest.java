@@ -19,10 +19,37 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class CoreHotPathTest {
 
+    private RecordingLogSink logs;
     private Orchestrator orchestrator;
 
-    @BeforeEach void setUp() { orchestrator = Orchestrator.create("core-hot-path"); }
+    @BeforeEach void setUp() {
+        logs = new RecordingLogSink();
+        orchestrator = Orchestrator.create("core-hot-path", logs);
+    }
     @AfterEach  void tearDown() { orchestrator.close(); }
+
+    /**
+     * Records what the core logged so tests can assert on log output, not just on
+     * side effects. Mirrors everything to {@link LogSink#STDERR} so a failing run
+     * still shows the orchestrator's trace.
+     */
+    private static final class RecordingLogSink implements LogSink {
+        private final List<String> errors = new CopyOnWriteArrayList<>();
+
+        /** @return every {@code error(...)} logged so far, in order. */
+        List<String> errors() { return errors; }
+
+        @Override public void info(String tag, String message) { LogSink.STDERR.info(tag, message); }
+        @Override public void warn(String tag, String message) { LogSink.STDERR.warn(tag, message); }
+        @Override public void error(String tag, String message) {
+            errors.add(message);
+            LogSink.STDERR.error(tag, message);
+        }
+        @Override public void error(String tag, String message, Throwable t) {
+            errors.add(message + " (" + t + ")");
+            LogSink.STDERR.error(tag, message, t);
+        }
+    }
 
     @Test
     void hardwareActionsFacadeIsSharedAcrossCalls() throws Exception {
@@ -84,11 +111,20 @@ class CoreHotPathTest {
         assertFalse(first.await(150, TimeUnit.MILLISECONDS),
                 "mismatched message must be dropped, not delivered");
         assertEquals(0, calls.get(), "mismatched message must be dropped, not delivered");
+        // "Not delivered" alone cannot tell a silent drop apart from a delivery
+        // that threw and was swallowed by the binder's catch (Throwable): if the
+        // isInstance guard were removed, m.invoke(node, "text") on a double
+        // parameter raises IllegalArgumentException, the handler never runs, and
+        // the two assertions above still hold. A dropped message leaves no trace;
+        // a failed delivery is logged as an error, so that is what we assert on.
+        assertEquals(List.of(), logs.errors(),
+                "mismatched message must be dropped silently, not delivered and failed");
 
         // A real Double still gets through.
         orchestrator.publish("hot/drop", 1.5);
         assertTrue(first.await(2, TimeUnit.SECONDS));
         assertEquals(1, calls.get());
+        assertEquals(List.of(), logs.errors(), "matching message must not log an error");
     }
 
     @Test
