@@ -147,11 +147,9 @@ public final class OrchestratorImpl implements Orchestrator {
         Objects.requireNonNull(topicName, "topicName");
         Objects.requireNonNull(type, "type");
 
-        Class<?> normalized = boxed(type);
-
         Topic<?> existing = topics.get(topicName);
         if (existing != null) {
-            if (!boxed(existing.type()).isAssignableFrom(normalized)) {
+            if (!existing.acceptsType(type)) {
                 throw new IllegalArgumentException(
                         "Topic '" + topicName + "' already exists with type "
                                 + existing.type().getName() + ", cannot re-create as "
@@ -163,7 +161,7 @@ public final class OrchestratorImpl implements Orchestrator {
         Topic<T> created = new Topic<>(topicName, type);
         Topic<?> prior = topics.putIfAbsent(topicName, created);
         if (prior != null) {
-            if (!boxed(prior.type()).isAssignableFrom(normalized)) {
+            if (!prior.acceptsType(type)) {
                 throw new IllegalArgumentException(
                         "Topic '" + topicName + "' already exists with type "
                                 + prior.type().getName() + ", cannot re-create as "
@@ -175,20 +173,6 @@ public final class OrchestratorImpl implements Orchestrator {
         return created;
     }
 
-    /** Treat primitive {@code double.class} and wrapper {@code Double.class} as the same type. */
-    private static Class<?> boxed(Class<?> c) {
-        if (!c.isPrimitive()) return c;
-        if (c == int.class)     return Integer.class;
-        if (c == long.class)    return Long.class;
-        if (c == double.class)  return Double.class;
-        if (c == float.class)   return Float.class;
-        if (c == boolean.class) return Boolean.class;
-        if (c == byte.class)    return Byte.class;
-        if (c == short.class)   return Short.class;
-        if (c == char.class)    return Character.class;
-        return c;
-    }
-
     @Override
     public Optional<Topic<?>> findTopic(String topicName) {
         return Optional.ofNullable(topics.get(topicName));
@@ -198,7 +182,7 @@ public final class OrchestratorImpl implements Orchestrator {
     @SuppressWarnings("unchecked")
     public <T> Optional<Topic<T>> findTopic(String topicName, Class<T> type) {
         Topic<?> t = topics.get(topicName);
-        if (t == null || !boxed(t.type()).isAssignableFrom(boxed(type))) return Optional.empty();
+        if (t == null || !t.acceptsType(type)) return Optional.empty();
         return Optional.of((Topic<T>) t);
     }
 
@@ -217,14 +201,13 @@ public final class OrchestratorImpl implements Orchestrator {
 
         // Lazily create the topic from the value's runtime type. This matches
         // Heron's behavior: publishers don't have to pre-register topics.
-        Class<?> valueType = value.getClass();
         Topic<?> topic = topics.get(topicName);
         if (topic == null) {
-            topic = getOrCreateTopic(topicName, valueType);
-        } else if (!boxed(topic.type()).isAssignableFrom(boxed(valueType))) {
+            topic = getOrCreateTopic(topicName, value.getClass());
+        } else if (!topic.acceptsValueClass(value.getClass())) {
             throw new IllegalArgumentException(
                     "Topic '" + topicName + "' is typed " + topic.type().getName()
-                            + " but publish got " + valueType.getName());
+                            + " but publish got " + value.getClass().getName());
         }
 
         ((Topic<Object>) topic).recordLatest(value);
@@ -312,7 +295,7 @@ public final class OrchestratorImpl implements Orchestrator {
     @SuppressWarnings("unchecked")
     public <T> Optional<T> getLatestValue(String topicName, Class<T> type) {
         Topic<?> t = topics.get(topicName);
-        if (t == null || !boxed(t.type()).isAssignableFrom(boxed(type))) return Optional.empty();
+        if (t == null || !t.acceptsType(type)) return Optional.empty();
         return (Optional<T>) t.latestValue();
     }
 

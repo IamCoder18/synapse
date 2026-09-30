@@ -51,8 +51,18 @@ Optional<Double> latest = orchestrator.getLatestValue("drive/power/fl", Double.c
 double fl = latest.orElse(0.0);
 
 Topic<Double> flTopic = orchestrator.findTopic("drive/power/fl", Double.class).orElseThrow();
+
+// Read the timestamp first, then the value. Each accessor is internally consistent,
+// but two separate calls can still straddle a publish, so this order is the only one
+// that cannot pair an older value with a newer timestamp and report a fresh age for a
+// value that is already stale.
+//
+// latestPublishNanos() is 0 until the topic's first publish, so treat 0 as "never
+// published" rather than subtracting it -- that would hand you the raw nanoTime
+// reading, which is seconds to days rather than an age.
+long stamp = flTopic.latestPublishNanos();
+long nanosSinceUpdate = stamp == 0L ? Long.MAX_VALUE : System.nanoTime() - stamp;
 double fl2 = flTopic.latestValueOr(0.0);
-long nanosSinceUpdate = System.nanoTime() - flTopic.latestPublishNanos();
 ```
 
 Fetching the latest value is the right tool inside periodic loops; subscribing is the right tool when the *event* matters, not the current state. See [Subscriptions](/docs/concepts/subscriptions) for the tradeoff.
