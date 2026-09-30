@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`Orchestrator.hardware()` now returns a shared instance.** The
+  `HardwareActions` facade is constructed once per orchestrator instead of once
+  per call, and the `HardwareView` handed to `bulkRead` callbacks is likewise
+  shared across registrations rather than allocated per registration. Both are
+  immutable single-reference views over the orchestrator, so this is not a
+  behavioral change beyond object identity — it is now safe to capture the
+  facade once and reuse it on hot paths.
+- **`@SubscribedTo` dispatch no longer re-boxes the parameter type per message.**
+  The primitive-to-wrapper normalisation is computed once at bind time instead
+  of on every delivered message. Equivalent to the previous conditional check.
+
 ## [0.4.0] - 2026-09-12
 
 ### Changed

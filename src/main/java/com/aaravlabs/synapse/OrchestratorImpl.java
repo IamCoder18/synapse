@@ -69,6 +69,11 @@ public final class OrchestratorImpl implements Orchestrator {
      */
     private final java.util.concurrent.ScheduledExecutorService hardwareThread;
 
+    // Immutable one-field views over this orchestrator, so they are built once
+    // rather than allocated per hardware() call or per bulk-read registration.
+    private final com.aaravlabs.synapse.ftc.HardwareActions hardwareActions;
+    private final com.aaravlabs.synapse.ftc.HardwareView hardwareView;
+
     private volatile boolean closed = false;
 
     private OrchestratorImpl(String name, LogSink log) {
@@ -97,6 +102,9 @@ public final class OrchestratorImpl implements Orchestrator {
         // (for hardware loops) go to the same executor / thread.
         this.hardwareThread = java.util.concurrent.Executors
                 .newSingleThreadScheduledExecutor(hwTf);
+
+        this.hardwareActions = new com.aaravlabs.synapse.ftc.HardwareActions(this);
+        this.hardwareView = new com.aaravlabs.synapse.ftc.HardwareView(this);
     }
 
     private volatile Thread hardwareThreadThread;
@@ -434,8 +442,7 @@ public final class OrchestratorImpl implements Orchestrator {
             int hz, com.aaravlabs.synapse.ftc.BulkReader reader) {
         if (hz <= 0) throw new IllegalArgumentException("hz must be > 0");
         long delayMs = Math.max(1, 1000L / hz);
-        com.aaravlabs.synapse.ftc.HardwareView view =
-                new com.aaravlabs.synapse.ftc.HardwareView(this);
+        com.aaravlabs.synapse.ftc.HardwareView view = hardwareView;
         ScheduledFuture<?> f = hardwareThread.scheduleWithFixedDelay(() -> {
             try {
                 reader.read(view);
@@ -446,9 +453,14 @@ public final class OrchestratorImpl implements Orchestrator {
         return new com.aaravlabs.synapse.ftc.HardwareActions.BulkReadHandle(f);
     }
 
+    /**
+     * @return the shared {@link com.aaravlabs.synapse.ftc.HardwareActions} facade for
+     *         this orchestrator. The same instance is returned on every call, so it is
+     *         safe to hold onto.
+     */
     @Override
     public com.aaravlabs.synapse.ftc.HardwareActions hardware() {
-        return new com.aaravlabs.synapse.ftc.HardwareActions(this);
+        return hardwareActions;
     }
 
     /** Package-private: used by the binder to schedule @RunPeriodically methods. */

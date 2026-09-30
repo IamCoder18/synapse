@@ -7,8 +7,9 @@ import com.aaravlabs.synapse.Orchestrator;
  * Provides convenient {@code publish} and {@code getLatestValue} methods that
  * the bulk-read callback uses to record hardware readings onto the bus.
  *
- * <p>Instances are created per-callback by {@code HardwareActions.bulkRead}; you
- * should not construct them yourself.
+ * <p>A single instance is created per orchestrator and shared by every
+ * {@link HardwareActions#bulkRead(int, BulkReader)} registration; you should not
+ * construct them yourself.
  */
 public final class HardwareView {
 
