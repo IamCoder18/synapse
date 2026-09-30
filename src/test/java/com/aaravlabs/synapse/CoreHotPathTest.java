@@ -81,7 +81,8 @@ class CoreHotPathTest {
         orchestrator.registerNode("n", new N(orchestrator));
 
         orchestrator.publish("hot/drop", "text");
-        Thread.sleep(150);
+        assertFalse(first.await(150, TimeUnit.MILLISECONDS),
+                "mismatched message must be dropped, not delivered");
         assertEquals(0, calls.get(), "mismatched message must be dropped, not delivered");
 
         // A real Double still gets through.
@@ -100,7 +101,8 @@ class CoreHotPathTest {
                 });
         try {
             assertTrue(done.await(2, TimeUnit.SECONDS), "bulk read callback should have run");
-            assertEquals(1, orchestrator.getLatestValue("hot/bulk", Float.class).orElse(null));
+            assertEquals(Float.valueOf(1.0f),
+                    orchestrator.getLatestValue("hot/bulk", Float.class).orElse(null));
         } finally {
             handle.cancel();
         }
