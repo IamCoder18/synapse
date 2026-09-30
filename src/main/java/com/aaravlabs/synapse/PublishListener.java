@@ -1,8 +1,8 @@
 package com.aaravlabs.synapse;
 
 /**
- * Notified synchronously on every {@link Orchestrator#publish} call, before any
- * subscriber dispatch.
+ * Notified synchronously on every {@link Orchestrator#publish} that reaches the
+ * bus, before any subscriber dispatch.
  *
  * <p>Pluggable like {@link LogSink}, and for the same reason: recording,
  * metrics, and tracing all need to observe the bus, and none of them should have
@@ -62,12 +62,15 @@ package com.aaravlabs.synapse;
  * the stack whole, with the heap never touched -- so failing the publish, and
  * with it every subscriber, would be the hook causing the outage it exists to
  * diagnose. {@link InternalError} and {@link UnknownError} are contained for a
- * different reason: neither has any JDK subclass and neither has a documented
- * recoverable producer, so this code cannot distinguish a benign one from a
- * fatal one and does not guess. What it can tell is that the bus is not
- * compromised -- the fault is inside one listener's frame, and nothing else on
- * the bus depends on it. Re-throwing by type rather than by consequence was the
- * bug; see {@code OrchestratorImpl.publish}.
+ * different reason: nothing in the JDK's own hierarchy says either is fatal.
+ * {@code UnknownError} has no subclass in {@code java.base} at all, and the
+ * only subclass of {@link InternalError} there is
+ * {@link java.util.zip.ZipError} -- a corrupt-archive report, raised by the
+ * sort of module a diagnostics hook is, and the sort of fault to contain
+ * rather than propagate. What can be told is that the bus is not compromised
+ * -- the fault is inside one listener's frame, and nothing else on the bus
+ * depends on it. Re-throwing by type rather than by consequence was the bug;
+ * see {@code OrchestratorImpl.publish}.
  *
  * <h2>Cost</h2>
  * When no listener is registered the call costs a single volatile read, so this

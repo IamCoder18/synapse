@@ -25,11 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the recovery path needs memory too, since logging the error allocates. Every
   other `VirtualMachineError` is contained. `StackOverflowError` is routinely
   recoverable (an unbounded listener recursion unwinds that listener's frames
-  and leaves the stack whole, with the heap untouched), and `InternalError` and
-  `UnknownError` have no JDK subclass and no documented recoverable producer,
-  so neither can be told apart from a fatal one without guessing -- the bus is
-  not compromised in any of these cases, so the fault stays contained. With no
-  listeners registered, `publish` costs a single volatile read.
+  and leaves the stack whole, with the heap untouched), and nothing in the
+  JDK's own hierarchy says `InternalError` or `UnknownError` is fatal --
+  `UnknownError` has no subclass in `java.base` at all, and the only subclass
+  of `InternalError` there is `java.util.zip.ZipError`, a corrupt-archive
+  report that is the sort of fault to contain -- so neither can be told apart
+  from a fatal one without guessing. The bus is not compromised in any of these
+  cases, so the fault stays contained. With no listeners registered, `publish`
+  costs a single volatile read.
 
   `addPublishListener` throws `UnsupportedOperationException` on an
   implementation that does not support listeners, rather than accepting the

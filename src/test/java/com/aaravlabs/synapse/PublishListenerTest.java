@@ -2,10 +2,19 @@ package com.aaravlabs.synapse;
 
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.net.URI;
+import java.nio.file.DirectoryStream;
+import java.nio.file.FileSystem;
+import java.nio.file.FileSystemAlreadyExistsException;
+import java.nio.file.FileSystems;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -30,6 +39,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * since this hook is on the hot path of every publish on the robot.
  */
 class PublishListenerTest {
+
+    private static final String CLASS_SUFFIX = ".class";
 
     @Test
     void listenerSeesEveryPublish() {
@@ -388,6 +399,65 @@ class PublishListenerTest {
     }
 
     @Test
+    void aListenerThrowingACorruptArchiveZipErrorIsContained() throws Exception {
+        // The one member of the containment family that no earlier version of
+        // this test knew about, and the reason this file now reads the JDK's
+        // hierarchy instead of a list written beside it.
+        //
+        // java.util.zip.ZipError is java.base's only InternalError subclass.
+        // The previous guard asserted InternalError had no JDK subclass at all,
+        // and that assertion was green on every JDK this project runs on only
+        // because ZipError was missing from the twenty-entry list it filtered.
+        // So a VirtualMachineError a diagnostics module can genuinely raise --
+        // one reading a corrupt artifact, cache or jar -- sat outside the
+        // coverage entirely.
+        //
+        // The containment decision is unchanged and is what this pins: ZipError
+        // is an InternalError, not an OutOfMemoryError, so the rethrow in
+        // OrchestratorImpl.publish never sees it and catch (Throwable) contains
+        // it. A corrupt archive is a fault to contain, not one to fail every
+        // subscriber on the topic over.
+        //
+        // Built reflectively because ZipError is marked for removal on JDK 21
+        // and later, so a direct reference would deprecation-warn on exactly
+        // the JDKs a future maintainer would run this on.
+        Object zipError = newZipError();
+        Orchestrator orch = Orchestrator.create("throwing-zip-error", LogSink.SILENT);
+        try {
+            AtomicBoolean afterRan = new AtomicBoolean();
+            AtomicInteger delivered = new AtomicInteger();
+            orch.addPublishListener((t, v, n) -> {
+                throw (Error) zipError;
+            });
+            orch.addPublishListener((t, v, n) -> afterRan.set(true));
+            orch.subscribe("t", Double.class, v -> delivered.incrementAndGet());
+
+            assertDoesNotThrow(() -> orch.publish("t", 1.0),
+                    "ZipError is an InternalError and not an OutOfMemoryError, so the one rethrow in"
+                            + " publish must not see it");
+            assertTrue(afterRan.get(), "listeners after the failing one must still run");
+            assertEquals(1.0, orch.getLatestValue("t", Double.class).orElseThrow(),
+                    "the publish itself must still complete");
+            awaitCount(delivered, 1);
+            assertEquals(1, delivered.get(), "subscribers must still be dispatched");
+        } finally {
+            orch.close();
+        }
+    }
+
+    private static Object newZipError() {
+        try {
+            return Class.forName("java.util.zip.ZipError")
+                    .getConstructor(String.class)
+                    .newInstance("listener hit a corrupt archive");
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("java.util.zip.ZipError must exist and be constructible;"
+                    + " the containment reasoning below depends on it being a VirtualMachineError"
+                    + " subclass", e);
+        }
+    }
+
+    @Test
     void theContainedVirtualMachineErrorsAreAllOfThem() throws Exception {
         // Not a behaviour test: a guard on the reasoning behind the carve-out.
         // publish rethrows OutOfMemoryError and contains every other
@@ -396,43 +466,187 @@ class PublishListenerTest {
         // the contract. If a future JDK adds or reshapes a subclass, this
         // fails and the carve-out has to be re-examined rather than assumed.
         //
-        // Verified on the running JDK rather than from memory: ThreadDeath is
-        // NOT a VirtualMachineError (it is a plain Error), and every
-        // class-loading error a robot build realistically throws --
-        // NoClassDefFoundError, ClassFormatError, VerifyError,
-        // IncompatibleClassChangeError and its subclasses -- descends from
-        // LinkageError, not from InternalError. So none of them was ever in
-        // scope of the old carve-out; they were already contained by
-        // catch (Throwable), and are covered by
-        // aListenerThrowingANonFatalErrorStillDoesNotBreakThePublish.
-        List<Class<?>> direct = directSubclassesOf(VirtualMachineError.class);
+        // The hierarchy is read out of the running JDK by javaBaseClasses()
+        // below, never from a list written in this file. That distinction is
+        // the whole test. The previous version filtered a hardcoded
+        // twenty-entry list of error classes and compared the result against a
+        // hand-written restatement of the same twenty entries, so it could only
+        // ever confirm itself: it was green on every JDK while
+        // java.util.zip.ZipError -- java.base's one real InternalError subclass
+        // -- went unexamined, and while a JDK that added a fifth
+        // VirtualMachineError subclass would have left it green too. Its own
+        // comment claimed the opposite.
+        List<Class<?>> javaBase = javaBaseClasses();
+
+        // Self-check on the scan, so that a scan which silently found nothing
+        // cannot turn every emptiness assertion below into a vacuous pass. The
+        // old version had no equivalent, which is how a wrong "there is no
+        // subclass" could stay green.
+        assertEquals(List.of(Error.class, Exception.class),
+                directSubclassesIn(javaBase, Throwable.class),
+                "the scan must really find the Throwable roots, or every emptiness assertion below"
+                        + " is vacuous and this guard guards nothing");
+
         assertEquals(
                 List.of(InternalError.class, OutOfMemoryError.class,
                         StackOverflowError.class, UnknownError.class),
-                direct,
+                directSubclassesIn(javaBase, VirtualMachineError.class),
                 "the direct VirtualMachineError subclasses in this JDK; if this changed, re-review"
                         + " which of them are recoverable before leaving them contained");
-        assertEquals(List.of(), directSubclassesOf(InternalError.class),
-                "InternalError has no JDK subclass, which is why it is contained by consequence"
-                        + " rather than by classification");
-        assertEquals(List.of(), directSubclassesOf(UnknownError.class),
+
+        // An empty subclass list is what makes each of these the whole family
+        // rather than one member of it, and that is the fact the containment
+        // argument rests on. If a future JDK grew a StackOverflowError
+        // subclass, say, the behaviour tests above would still pin the one
+        // class they throw while a contained sibling escaped as if it were the
+        // pinned one -- and OutOfMemoryError is worse still, because a
+        // subclass of it would propagate straight out of publish.
+        assertEquals(List.of(), directSubclassesIn(javaBase, OutOfMemoryError.class),
+                "OutOfMemoryError has no subclass in this JDK, so the carve-out is exactly one class;"
+                        + " if this changed, a new subclass would propagate and take the bus down");
+        assertEquals(List.of(), directSubclassesIn(javaBase, StackOverflowError.class),
+                "StackOverflowError has no subclass either, so containment covers the whole family");
+        assertEquals(List.of(), directSubclassesIn(javaBase, UnknownError.class),
                 "UnknownError has no JDK subclass either");
-        assertFalse(VirtualMachineError.class.isAssignableFrom(Class.forName("java.lang.ThreadDeath")),
-                "ThreadDeath is a plain Error; it was never in the carve-out and stays contained");
+
+        // The assertion the hand-written list got wrong. ZipError is
+        // java.base's only InternalError subclass, so the older claim that
+        // InternalError has no JDK subclass has never been true on any JDK this
+        // project runs on. It changes no behaviour -- ZipError is an
+        // InternalError and not an OutOfMemoryError, so it is contained, and
+        // aListenerThrowingACorruptArchiveZipErrorIsContained pins that -- but
+        // a carve-out justified by "no subclass exists" is not a carve-out
+        // anybody has examined.
+        Class<?> zipError = Class.forName("java.util.zip.ZipError", false, null);
+        assertEquals(List.of(zipError), directSubclassesIn(javaBase, InternalError.class),
+                "java.base's only InternalError subclass; a change here means the containment"
+                        + " reasoning in PublishListener has to be re-derived from the new shape");
+        assertFalse(OutOfMemoryError.class.isAssignableFrom(zipError),
+                "ZipError is an InternalError, not an OutOfMemoryError, so it is contained and never"
+                        + " reaches the one rethrow");
+
+        // The class-loading errors a robot build realistically throws do not
+        // descend from InternalError at all. They are LinkageErrors, so they
+        // were already contained by catch (Throwable) even under the broad
+        // carve-out this test exists to keep narrow -- none of them was ever in
+        // scope, and they are covered by
+        // aListenerThrowingANonFatalErrorStillDoesNotBreakThePublish.
+        // Verified on the running JDK by class name, because ThreadDeath and
+        // ZipError are both marked for removal on recent JDKs.
+        List<Class<?>> linkageSubclasses = directSubclassesIn(javaBase, LinkageError.class);
+        for (String classLoadingError : List.of("java.lang.ClassFormatError",
+                "java.lang.NoClassDefFoundError", "java.lang.VerifyError",
+                "java.lang.IncompatibleClassChangeError")) {
+            Class<?> candidate = Class.forName(classLoadingError, false, null);
+            assertTrue(linkageSubclasses.contains(candidate),
+                    classLoadingError + " must descend from LinkageError in this JDK");
+            assertFalse(InternalError.class.isAssignableFrom(candidate),
+                    classLoadingError + " is a LinkageError, not an InternalError, so it was never"
+                            + " in scope of the old VirtualMachineError carve-out");
+        }
+
+        Class<?> threadDeath = Class.forName("java.lang.ThreadDeath", false, null);
+        assertFalse(VirtualMachineError.class.isAssignableFrom(threadDeath),
+                "ThreadDeath is a plain Error, not a VirtualMachineError; it was never in the"
+                        + " carve-out and stays contained");
     }
 
-    /** JDK subclasses of {@code type}, excluding {@code type} itself, name-sorted. */
-    private static List<Class<?>> directSubclassesOf(Class<?> type) {
-        List<Class<?>> candidates = List.of(
-                OutOfMemoryError.class, StackOverflowError.class, InternalError.class,
-                UnknownError.class, BootstrapMethodError.class, ClassCircularityError.class,
-                ClassFormatError.class, ExceptionInInitializerError.class,
-                IncompatibleClassChangeError.class, NoClassDefFoundError.class,
-                UnsatisfiedLinkError.class, VerifyError.class, LinkageError.class,
-                AbstractMethodError.class, IllegalAccessError.class, InstantiationError.class,
-                NoSuchMethodError.class, NoSuchFieldError.class, UnsupportedClassVersionError.class);
+    /**
+     * Every class declared by {@code java.base} on the running JDK, read out of
+     * the module image rather than asserted by this project.
+     *
+     * <p>Two JDK APIs that look like they would do this, and do not:
+     * {@code Class.getDeclaredClasses()} returns an empty array for these
+     * JDK-internal error classes from JDK 17 on, because they are not nested
+     * classes of anything, and {@link Module} exposes no way to enumerate the
+     * classes it contains. What does work is the {@code jrt:} filesystem, the
+     * JVM's own view of the module image.
+     *
+     * <p>The package list comes from the module descriptor, and the class list
+     * from those packages' directories, so both halves are JDK-derived and a
+     * new package or a new class appears here without this file changing. It
+     * walks {@code java.base} only, which is where the whole standard error
+     * hierarchy lives -- {@code Error} and {@code Exception} are its only two
+     * roots -- and the sanity assertion in the test above checks that this
+     * scan really does find them.
+     */
+    private static List<Class<?>> javaBaseClasses() throws IOException {
+        FileSystem jrt = jrtFileSystem();
+        Path moduleRoot = jrt.getPath("/modules/java.base");
+        Set<String> packages = ModuleLayer.boot().findModule("java.base")
+                .map(module -> module.getDescriptor().packages())
+                .orElseThrow(() -> new AssertionError("java.base is not in the boot layer of this JVM,"
+                        + " so its hierarchy cannot be read. A guard that cannot see the hierarchy"
+                        + " must fail loudly, not pass"));
+
+        List<Class<?>> classes = new ArrayList<>();
+        for (String packageName : packages) {
+            Path packageDir = moduleRoot.resolve(packageName.replace('.', '/'));
+            // A module descriptor may declare a package that holds no classes
+            // at all. That is not a hierarchy change, so it must not be
+            // allowed to fail this test.
+            if (!Files.isDirectory(packageDir)) {
+                continue;
+            }
+            try (DirectoryStream<Path> entries = Files.newDirectoryStream(packageDir)) {
+                for (Path entry : entries) {
+                    String fileName = entry.getFileName().toString();
+                    // Nested classes are skipped: the hierarchy is declared by
+                    // top-level types, and a member class of ZipError is not a
+                    // new node in the error tree.
+                    if (!fileName.endsWith(CLASS_SUFFIX) || fileName.indexOf('$') >= 0) {
+                        continue;
+                    }
+                    String className = packageName + '.'
+                            + fileName.substring(0, fileName.length() - CLASS_SUFFIX.length());
+                    try {
+                        // initialize=false, so reading the JDK's declarations
+                        // cannot run a static initialiser and fail. A null
+                        // loader uses the boot loader, which is where java.base
+                        // lives.
+                        classes.add(Class.forName(className, false, null));
+                    } catch (ClassNotFoundException | LinkageError notAClass) {
+                        // An image entry that is not loadable as a class -- a
+                        // resource named like one, or a class this JDK cannot
+                        // link -- is not part of the hierarchy.
+                    }
+                }
+            }
+        }
+        return classes;
+    }
+
+    /**
+     * The jrt filesystem, opening it if this JVM has not installed the
+     * provider yet. Most JDKs have it from startup, but not all launchers do,
+     * and a test must not depend on that.
+     */
+    private static FileSystem jrtFileSystem() throws IOException {
+        URI jrt = URI.create("jrt:/");
+        try {
+            return FileSystems.getFileSystem(jrt);
+        } catch (RuntimeException notInstalledYet) {
+            try {
+                return FileSystems.newFileSystem(jrt, Collections.emptyMap());
+            } catch (FileSystemAlreadyExistsException raced) {
+                return FileSystems.getFileSystem(jrt);
+            }
+        }
+    }
+
+    /**
+     * The classes in {@code candidates} whose immediate superclass is exactly
+     * {@code type}, name-sorted.
+     *
+     * <p>Exact superclass rather than assignable: this reads the shape of the
+     * JDK's hierarchy, which is what the containment argument is about. The
+     * old helper of this name returned every subtype of {@code type} drawn
+     * from twenty classes written beside it, so it was a filter over a
+     * constant rather than a reading of anything.
+     */
+    private static List<Class<?>> directSubclassesIn(List<Class<?>> candidates, Class<?> type) {
         return candidates.stream()
-                .filter(c -> c != type && type.isAssignableFrom(c))
+                .filter(c -> c.getSuperclass() == type)
                 .sorted(Comparator.comparing(Class::getName))
                 .collect(Collectors.toList());
     }

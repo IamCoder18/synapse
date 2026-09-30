@@ -314,15 +314,18 @@ public final class OrchestratorImpl implements Orchestrator {
                     // is the right outcome for that case.
                     //
                     // InternalError and UnknownError are contained for the
-                    // same reason. Neither has any JDK subclass and neither
-                    // has a documented recoverable producer, so this code
-                    // cannot tell a benign one from a fatal one -- and it
-                    // does not get to guess. What it can tell is that the
-                    // bus itself is fine: the fault is inside one listener's
-                    // frame, and the other listeners and the subscribers have
-                    // no dependence on it. Re-throwing a VirtualMachineError
-                    // merely because of its type was the bug; the narrow case
-                    // above is the one that is actually unrecoverable.
+                    // same reason: nothing in the JDK's own hierarchy says
+                    // either is fatal. UnknownError has no subclass in
+                    // java.base at all, and the only subclass of InternalError
+                    // there is java.util.zip.ZipError -- a corrupt-archive
+                    // report, raised by the sort of module a diagnostics hook
+                    // is, and the sort of fault to contain rather than to
+                    // propagate. What can be told is that the bus itself is
+                    // fine: the fault is inside one listener's frame, and the
+                    // other listeners and the subscribers have no dependence
+                    // on it. Re-throwing a VirtualMachineError merely because
+                    // of its type was the bug; the narrow case above is the
+                    // one that is actually unrecoverable.
                     log.error(name, "publish listener threw", t);
                 }
             }
