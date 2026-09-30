@@ -11,9 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `PublishListener`: a pluggable hook notified synchronously on every
-  `Orchestrator.publish`, before subscriber dispatch. Intended for diagnostics --
-  recording, metrics, tracing -- which previously had no way to observe the bus
-  without reimplementing `publish`.
+  `Orchestrator.publish` that reaches the bus, before subscriber dispatch.
+  Intended for diagnostics -- recording, metrics, tracing -- which previously
+  had no way to observe the bus without reimplementing `publish`.
 
   Registered with `addPublishListener` / `removePublishListener`, declared as
   `default` methods so existing `Orchestrator` implementors and test doubles keep
@@ -21,9 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   called in registration order. A listener that throws is caught and logged, so
   diagnostics can never break the bus -- including when it throws an `Error`
   such as `AssertionError` or `NoClassDefFoundError`. The one exception is
-  `VirtualMachineError`: if a listener leaves the JVM out of memory or past
-  recovery, that error propagates out of `publish` instead of being stepped
-  over. With no listeners registered, `publish` costs a single volatile read.
+  `OutOfMemoryError`, and only that: heap exhaustion is the one condition where
+  the recovery path needs memory too, since logging the error allocates. Every
+  other `VirtualMachineError` is contained. `StackOverflowError` is routinely
+  recoverable (an unbounded listener recursion unwinds that listener's frames
+  and leaves the stack whole, with the heap untouched), and `InternalError` and
+  `UnknownError` have no JDK subclass and no documented recoverable producer,
+  so neither can be told apart from a fatal one without guessing -- the bus is
+  not compromised in any of these cases, so the fault stays contained. With no
+  listeners registered, `publish` costs a single volatile read.
 
   `addPublishListener` throws `UnsupportedOperationException` on an
   implementation that does not support listeners, rather than accepting the
@@ -31,8 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a safe no-op. Implementors that can support listeners must override both.
 
   Listeners are notified before the topic's type is validated, so a publish
-  rejected with `IllegalArgumentException` is still reported. One publish
-  iterates a snapshot of the listener list taken when it starts, so a listener
+  rejected for a type mismatch is still reported. The two cases where a call
+  never reaches the hook are documented rather than reported: a publish to a
+  closed orchestrator returns early, and a publish of a `null` value throws
+  `IllegalArgumentException` before any listener runs -- in both, nothing was
+  published, and in the `null` case there is no value to hand a listener, which
+  is why `onPublish` documents its value as never null. One publish iterates a
+  snapshot of the listener list taken when it starts, so a listener
   unregistered part-way through still sees that publish but not the next one.
 
 ### Changed

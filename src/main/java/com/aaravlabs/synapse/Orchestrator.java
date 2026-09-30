@@ -76,6 +76,11 @@ public interface Orchestrator extends AutoCloseable {
      * value's runtime type, so callers never have to pre-register topics. The publish
      * itself is non-blocking even from the hardware thread.
      *
+     * <p>A publish on a {@linkplain #isClosed() closed} orchestrator is ignored: it
+     * logs a warning and returns without dispatching. Neither that case nor a
+     * {@code null} value notifies any registered {@link PublishListener}; a
+     * type mismatch does. {@link PublishListener} states which is which.
+     *
      * @param name the topic name
      * @param value the value to publish (must not be null)
      * @param <T> the value type
@@ -273,17 +278,22 @@ public interface Orchestrator extends AutoCloseable {
     // ---- diagnostics -----------------------------------------------------
 
     /**
-     * Registers a listener notified on every {@link #publish}, before subscriber
-     * dispatch. See {@link PublishListener} for the threading contract.
+     * Registers a listener notified on every {@link #publish} that reaches the
+     * bus, before subscriber dispatch. See {@link PublishListener} for the
+     * threading contract.
      *
      * <p>Listeners run on the publishing thread and must not block. Registering
      * none leaves publish with a single volatile read, so this is cheap to leave
      * enabled permanently.
      *
-     * <p>Listeners are notified before the topic's type is validated, so a
-     * publish rejected with {@code IllegalArgumentException} is still reported.
-     * That is deliberate: a type mismatch is a fault worth being able to
-     * observe, and the caller still receives the exception.
+     * <p>Not every {@code publish} call reaches a listener. A publish to a
+     * closed orchestrator returns before the hook, and a publish of a
+     * {@code null} value throws {@code IllegalArgumentException} before it, so
+     * neither is observable. A publish rejected for a <i>type mismatch</i> is
+     * observed, because that one happens after the bus has started acting:
+     * listeners are notified, and then the caller receives the exception. That
+     * is deliberate -- a type mismatch is a fault worth being able to observe,
+     * and the caller still receives the exception.
      *
      * <p>The default implementation throws rather than silently doing nothing.
      * An implementor that cannot support listeners should fail at registration,
