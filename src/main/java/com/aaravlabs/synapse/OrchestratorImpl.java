@@ -69,6 +69,11 @@ public final class OrchestratorImpl implements Orchestrator {
      */
     private final java.util.concurrent.ScheduledExecutorService hardwareThread;
 
+    // Immutable one-field views over this orchestrator, so they are built once
+    // rather than allocated per hardware() call or per bulk-read registration.
+    private final com.aaravlabs.synapse.ftc.HardwareActions hardwareActions;
+    private final com.aaravlabs.synapse.ftc.HardwareView hardwareView;
+
     private volatile boolean closed = false;
 
     private OrchestratorImpl(String name, LogSink log) {
@@ -98,16 +103,9 @@ public final class OrchestratorImpl implements Orchestrator {
         this.hardwareThread = java.util.concurrent.Executors
                 .newSingleThreadScheduledExecutor(hwTf);
 
-        // Both facades are immutable one-field views over this orchestrator, so build
-        // them once here. `orchestrator.hardware()` is called per message by hot
-        // subscribers and used to allocate a fresh facade every time; the bulk-read
-        // view was likewise allocated per registration.
         this.hardwareActions = new com.aaravlabs.synapse.ftc.HardwareActions(this);
         this.hardwareView = new com.aaravlabs.synapse.ftc.HardwareView(this);
     }
-
-    private final com.aaravlabs.synapse.ftc.HardwareActions hardwareActions;
-    private final com.aaravlabs.synapse.ftc.HardwareView hardwareView;
 
     private volatile Thread hardwareThreadThread;
 
@@ -455,12 +453,12 @@ public final class OrchestratorImpl implements Orchestrator {
         return new com.aaravlabs.synapse.ftc.HardwareActions.BulkReadHandle(f);
     }
 
-    @Override
     /**
      * @return the shared {@link com.aaravlabs.synapse.ftc.HardwareActions} facade for
      *         this orchestrator. The same instance is returned on every call, so it is
-     *         safe to hold onto. (It was a fresh object per call before.)
+     *         safe to hold onto.
      */
+    @Override
     public com.aaravlabs.synapse.ftc.HardwareActions hardware() {
         return hardwareActions;
     }

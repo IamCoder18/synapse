@@ -26,13 +26,9 @@ class CoreHotPathTest {
 
     @Test
     void hardwareActionsFacadeIsSharedAcrossCalls() throws Exception {
-        // Hot subscribers call orchestrator.hardware() once per message; it used to
-        // allocate a fresh facade each time. Same instance every call now, so it is
-        // safe to capture and reuse.
         assertSame(orchestrator.hardware(), orchestrator.hardware());
 
-        // And it must still work, not just be cached. run() is async, so wait on a
-        // latch rather than asserting immediately.
+        // Cached, not frozen: the facade still reaches the hardware thread.
         AtomicInteger hits = new AtomicInteger();
         CountDownLatch done = new CountDownLatch(1);
         orchestrator.hardware().run(() -> { hits.incrementAndGet(); done.countDown(); });
@@ -42,11 +38,8 @@ class CoreHotPathTest {
 
     @Test
     void annotatedSubscriberStillReceivesPrimitiveAndWrapperTypedMessages() throws Exception {
-        // The binder's per-message type check moved from
-        // `paramType.isPrimitive() ? boxed(paramType).isInstance(msg) : paramType.isInstance(msg)`
-        // to a single pre-normalised `effectiveParam.isInstance(msg)`. That is only
-        // equivalent if `boxed` leaves non-primitives alone — so cover both a primitive
-        // parameter and a reference-typed one.
+        // Covers both sides of the hoisted normalisation: a primitive parameter and a
+        // reference-typed one.
         List<Double> doubles = new CopyOnWriteArrayList<>();
         List<String> strings = new CopyOnWriteArrayList<>();
         CountDownLatch done = new CountDownLatch(2);
@@ -70,17 +63,14 @@ class CoreHotPathTest {
 
     @Test
     void annotatedSubscriberSilentlyDropsMismatchedMessages() throws Exception {
-        // Behaviour that must be preserved: a message whose runtime type does not match
-        // the handler parameter is silently dropped — the handler does not run and
-        // nothing is logged. This is the branch the hoisted check guards.
-        //
-        // The topic has to be typed more loosely than the handler parameter for the
-        // branch to be reachable at all: publish() rejects a String for a Double topic
-        // with IllegalArgumentException before any subscriber sees it. So the topic is
-        // created as Object first (topic types are first-writer-wins), which is the
-        // realistic case — two handlers with different parameter types on one topic.
         AtomicInteger calls = new AtomicInteger();
         CountDownLatch first = new CountDownLatch(1);
+
+        // The topic has to be typed more loosely than the handler parameter for the
+        // drop branch to be reachable: publish() rejects a String for a Double topic
+        // before any subscriber sees it. Topic types are first-writer-wins, so
+        // creating it as Object first is the realistic case — two handlers with
+        // different parameter types on one topic.
         orchestrator.getOrCreateTopic("hot/drop", Object.class);
 
         class N extends Node {
@@ -90,7 +80,6 @@ class CoreHotPathTest {
         }
         orchestrator.registerNode("n", new N(orchestrator));
 
-        // "text" is not a Double, so the handler must not run for it.
         orchestrator.publish("hot/drop", "text");
         Thread.sleep(150);
         assertEquals(0, calls.get(), "mismatched message must be dropped, not delivered");
@@ -103,13 +92,10 @@ class CoreHotPathTest {
 
     @Test
     void bulkReadCallbackGetsAWorkingView() throws Exception {
-        // The HardwareView handed to bulkRead callbacks is now the shared instance.
         CountDownLatch done = new CountDownLatch(1);
-        List<Float> seen = new CopyOnWriteArrayList<>();
         com.aaravlabs.synapse.ftc.HardwareActions.BulkReadHandle handle =
                 orchestrator.hardware().bulkRead(200, view -> {
                     view.publish("hot/bulk", 1.0f);
-                    seen.add(1.0f);
                     done.countDown();
                 });
         try {
@@ -118,6 +104,5 @@ class CoreHotPathTest {
         } finally {
             handle.cancel();
         }
-        assertFalse(seen.isEmpty());
     }
 }

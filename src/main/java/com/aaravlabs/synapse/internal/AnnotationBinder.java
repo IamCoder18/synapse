@@ -107,12 +107,9 @@ public final class AnnotationBinder {
         }
 
         Class<?> paramType = m.getParameterCount() == 1 ? m.getParameterTypes()[0] : null;
-        // Hoisted out of the per-message path. The normalisation used to be
-        // recomputed on every delivered message, inside the
-        // `paramType.isPrimitive() ? boxed(paramType).isInstance(msg) : ...`
-        // conditional below. It is also exactly equivalent to that expression:
-        // `boxed` returns non-primitives unchanged, so both branches collapsed
-        // to the same check once normalised.
+        // Normalised once here rather than per delivered message. Equivalent to
+        // `paramType.isPrimitive() ? boxed(paramType) : paramType`, because boxed()
+        // returns non-primitives unchanged.
         final Class<?> effectiveParam = paramType != null ? boxed(paramType) : null;
         Class<?> topicType = effectiveParam != null ? effectiveParam : Object.class;
 
