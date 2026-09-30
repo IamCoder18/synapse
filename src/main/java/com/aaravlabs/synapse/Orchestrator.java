@@ -280,15 +280,35 @@ public interface Orchestrator extends AutoCloseable {
      * none leaves publish with a single volatile read, so this is cheap to leave
      * enabled permanently.
      *
+     * <p>Listeners are notified before the topic's type is validated, so a
+     * publish rejected with {@code IllegalArgumentException} is still reported.
+     * That is deliberate: a type mismatch is a fault worth being able to
+     * observe, and the caller still receives the exception.
+     *
+     * <p>The default implementation throws rather than silently doing nothing.
+     * An implementor that cannot support listeners should fail at registration,
+     * where the mistake is visible, rather than leave the caller believing a
+     * recorder or a metric is attached when nothing is being captured. An
+     * implementor that can must override both this and
+     * {@link #removePublishListener(PublishListener)}: the default removal is a
+     * silent no-op, so a wrapper that forwarded only registration would let a
+     * caller detach a listener that is still attached.
+     *
      * @param listener the listener; ignored if null
+     * @throws UnsupportedOperationException if this implementation cannot
+     *         support listeners
      */
     default void addPublishListener(PublishListener listener) {
+        if (listener == null) {
+            return;
+        }
         throw new UnsupportedOperationException("publish listeners are not supported by this orchestrator");
     }
 
     /**
      * Removes a previously registered listener. Does nothing if it was not
-     * registered.
+     * registered, or if this implementation does not support listeners, so
+     * cleanup is always safe to call.
      *
      * @param listener the listener to remove; ignored if null
      */

@@ -8,10 +8,13 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -275,6 +278,173 @@ class PublishListenerTest {
             assertSame(payload, values.get(0), "the listener receives the published reference");
         } finally {
             orch.close();
+        }
+    }
+
+    @Test
+    void aListenerUnregisteringAnotherMidPublishDoesNotBreakTheBus() {
+        // Regression test, single-threaded and deterministic. The listener
+        // loop originally iterated with size() and get(i), each of which reads
+        // the current CopyOnWriteArrayList array independently. A listener
+        // that unregistered a later one mid-publish left the cached size()
+        // stale, and get(i) then threw IndexOutOfBoundsException. That call is
+        // inside the try/catch, so the publish itself never failed -- but the
+        // loop aborted there, every remaining listener was silently skipped
+        // for that publish, and the log reported a listener as having thrown
+        // when the list was merely shorter than expected. The loop now walks
+        // one stable snapshot, so a publish notifies exactly the listeners
+        // registered when it started.
+        //
+        // Registering `first` before `second` is what makes it deterministic:
+        // `first` runs at index 0 and drops a listener that has not been
+        // notified yet, so the old loop's cached size() of 2 was already stale
+        // by the time it indexed. No threads, no timing, no retry.
+        Orchestrator orch = Orchestrator.create("remove-during-publish", LogSink.SILENT);
+        try {
+            List<String> seen = new ArrayList<>();
+            PublishListener second = (t, v, n) -> seen.add("second");
+            PublishListener first = (t, v, n) -> {
+                seen.add("first");
+                orch.removePublishListener(second);
+            };
+            orch.addPublishListener(first);
+            orch.addPublishListener(second);
+
+            AtomicInteger delivered = new AtomicInteger();
+            orch.subscribe("t", Double.class, v -> delivered.incrementAndGet());
+
+            assertDoesNotThrow(() -> orch.publish("t", 1.0),
+                    "mutating the listener list from inside a listener must not fail the publish");
+
+            assertEquals(List.of("first", "second"), seen,
+                    "every listener registered when the publish started must be notified, even one"
+                    + " that a preceding listener unregistered mid-publish");
+            assertEquals(1.0, orch.getLatestValue("t", Double.class).orElseThrow(),
+                    "the publish itself must still complete");
+
+            awaitCount(delivered, 1);
+            assertEquals(1, delivered.get(), "subscriber dispatch must not be skipped");
+        } finally {
+            orch.close();
+        }
+    }
+
+    @Test
+    void concurrentListenerChurnNeverSurfacesAsAPublishFailure() throws Exception {
+        // Bounded companion to the test above: mutating the listener list from
+        // several threads at once must not surface as a failed publish, and
+        // must not degrade into quadratic work.
+        //
+        // The listener set is fixed at four and registered once. An earlier
+        // version of this test added a fresh throwing listener on every
+        // iteration and never removed it, so the list grew without bound and
+        // every publish iterated -- and stack-traced -- an ever longer prefix:
+        // 8.2M logged exceptions and a 3.9G test result in 120 seconds, which
+        // timed the test out before it reached a single assertion. Registering
+        // two throwers makes the bound observable: their invocation count has
+        // to stay linear in the number of publishes.
+        Orchestrator orch = Orchestrator.create("churn", LogSink.SILENT);
+        try {
+            AtomicInteger notifications = new AtomicInteger();
+            AtomicInteger throwerRuns = new AtomicInteger();
+            AtomicInteger delivered = new AtomicInteger();
+
+            // Never unregistered, so it observes every publish exactly once.
+            PublishListener observer = (t, v, n) -> notifications.incrementAndGet();
+            // Removed and re-added by the churning threads.
+            PublishListener churned = (t, v, n) -> { };
+            PublishListener thrower = (t, v, n) -> {
+                throwerRuns.incrementAndGet();
+                throw new RuntimeException("always throws");
+            };
+            orch.addPublishListener(observer);
+            orch.addPublishListener(churned);
+            orch.addPublishListener(thrower);
+            orch.addPublishListener(thrower);
+            orch.subscribe("t", Double.class, v -> delivered.incrementAndGet());
+
+            int threads = 4;
+            int perThread = 500;
+            int publishes = threads * perThread;
+            CountDownLatch start = new CountDownLatch(1);
+            CountDownLatch done = new CountDownLatch(threads);
+            AtomicInteger publishFailures = new AtomicInteger();
+            AtomicReference<Throwable> firstFailure = new AtomicReference<>();
+
+            for (int t = 0; t < threads; t++) {
+                final boolean churn = t % 2 == 0;
+                Thread worker = new Thread(() -> {
+                    try {
+                        start.await();
+                        for (int i = 0; i < perThread; i++) {
+                            if (churn) {
+                                orch.removePublishListener(churned);
+                                orch.addPublishListener(churned);
+                            }
+                            orch.publish("t", (double) i);
+                        }
+                    } catch (Throwable e) {
+                        publishFailures.incrementAndGet();
+                        firstFailure.compareAndSet(null, e);
+                    } finally {
+                        done.countDown();
+                    }
+                });
+                worker.setDaemon(true);
+                worker.start();
+            }
+            start.countDown();
+            assertTrue(done.await(30, TimeUnit.SECONDS), "workers should finish");
+
+            assertEquals(0, publishFailures.get(),
+                    () -> "publish must never fail because of the listener list; first failure: "
+                            + firstFailure.get());
+            assertEquals(publishes, notifications.get(),
+                    "the listener that is never unregistered must see every publish exactly once");
+            assertTrue(throwerRuns.get() <= 2L * publishes,
+                    "only the two registered throwers may run per publish, so their invocation count"
+                            + " must stay linear in the publish count; got " + throwerRuns.get()
+                            + " for " + publishes + " publishes");
+
+            awaitCount(delivered, publishes);
+            assertEquals(publishes, delivered.get(), "every publish must still reach its subscriber");
+        } finally {
+            orch.close();
+        }
+    }
+
+    @Test
+    void aListenerSeesAPublishThatTypeValidationRejects() {
+        // Listeners run before the topic's type is checked, so a publish the
+        // bus rejects is still reported. That is deliberate: a type mismatch is
+        // exactly the kind of fault a recording should be able to show, and
+        // the caller still receives the exception.
+        Orchestrator orch = Orchestrator.create("type-mismatch", LogSink.SILENT);
+        try {
+            List<Object> seen = new ArrayList<>();
+            orch.subscribe("t", Double.class, v -> { });
+            orch.addPublishListener((topic, value, nanos) -> seen.add(value));
+
+            assertThrows(IllegalArgumentException.class, () -> orch.publish("t", "not a double"),
+                    "the caller still sees the type mismatch");
+
+            assertEquals(List.of("not a double"), seen,
+                    "a publish rejected by type validation must still be visible to listeners");
+        } finally {
+            orch.close();
+        }
+    }
+
+    /** Poll until {@code counter} reaches {@code target} or the deadline passes. */
+    private static void awaitCount(AtomicInteger counter, int target) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        while (counter.get() < target && System.nanoTime() < deadline) {
+            try {
+                Thread.sleep(1);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
         }
     }
 

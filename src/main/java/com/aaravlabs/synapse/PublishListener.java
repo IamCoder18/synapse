@@ -18,9 +18,17 @@ package com.aaravlabs.synapse;
  * <h2>Ordering</h2>
  * Listeners are called in registration order, after the null check and before
  * the topic's latest-value cache is updated, so a listener observes a publish
- * at the moment it was requested. A listener that throws is caught, logged, and
- * does not prevent delivery to the other listeners or to subscribers --
- * instrumentation must never be able to break the bus.
+ * at the moment it was requested. They also run before the topic's type is
+ * validated, so a publish rejected with {@code IllegalArgumentException} is
+ * still reported; the caller still receives the exception.
+ *
+ * <p>One publish iterates a snapshot of the listener list taken when it
+ * starts, so a listener unregistered part-way through is still notified for
+ * the publish already in flight. It will not see the next one.
+ *
+ * <p>A listener that throws is caught, logged, and does not prevent delivery
+ * to the other listeners or to subscribers -- instrumentation must never be
+ * able to break the bus.
  *
  * <h2>Cost</h2>
  * When no listener is registered the call costs a single volatile read, so this

@@ -236,12 +236,27 @@ public final class OrchestratorImpl implements Orchestrator {
         // One timestamp for every listener, taken before the type check so a
         // listener never observes a later instant than the publish itself.
         // Guarded so the common case -- nobody listening -- is one read.
+        //
+        // Listeners run before the type check, so a publish rejected with
+        // IllegalArgumentException is still reported. That is deliberate: a
+        // type mismatch is exactly the kind of fault a recording should be
+        // able to show, and the caller still sees the throw.
         java.util.List<PublishListener> listeners = publishListeners;
         if (!listeners.isEmpty()) {
             long now = System.nanoTime();
-            for (int i = 0, n = listeners.size(); i < n; i++) {
+            // Iterate, never index. CopyOnWriteArrayList's size() and get(i)
+            // each read the current array independently, so a listener that
+            // unregistered a later one mid-publish left the cached size()
+            // stale and get(i) threw IndexOutOfBoundsException. That call sits
+            // inside the try below, so the bus did not break -- but the loop
+            // aborted, every remaining listener was silently skipped for that
+            // publish, and the log blamed a listener for "throwing" when the
+            // list was merely shorter than expected. The iterator is backed by
+            // a single stable snapshot, so one publish always notifies exactly
+            // the listeners registered when it started.
+            for (PublishListener listener : listeners) {
                 try {
-                    listeners.get(i).onPublish(topicName, value, now);
+                    listener.onPublish(topicName, value, now);
                 } catch (Throwable t) {
                     // Diagnostics must never break the bus: log and carry on
                     // so the remaining listeners and the subscribers still run.

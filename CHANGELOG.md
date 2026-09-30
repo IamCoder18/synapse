@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
 - `PublishListener`: a pluggable hook notified synchronously on every
   `Orchestrator.publish`, before subscriber dispatch. Intended for diagnostics --
   recording, metrics, tracing -- which previously had no way to observe the bus
@@ -20,6 +21,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   called in registration order. A listener that throws is caught and logged, so
   diagnostics can never break the bus. With no listeners registered, `publish`
   costs a single volatile read.
+
+  `addPublishListener` throws `UnsupportedOperationException` on an
+  implementation that does not support listeners, rather than accepting the
+  registration and quietly recording nothing; `removePublishListener` is always
+  a safe no-op. Implementors that can support listeners must override both.
+
+  Listeners are notified before the topic's type is validated, so a publish
+  rejected with `IllegalArgumentException` is still reported. One publish
+  iterates a snapshot of the listener list taken when it starts, so a listener
+  unregistered part-way through still sees that publish but not the next one.
 
 ### Changed
 
