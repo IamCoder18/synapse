@@ -7,7 +7,9 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -45,7 +47,7 @@ class PublishListenerTest {
     }
 
     @Test
-    void listenerRunsBeforeSubscribersObserveTheValue() {
+    void listenerRunsBeforeSubscribersObserveTheValue() throws Exception {
         Orchestrator orch = Orchestrator.create("order");
         try {
             List<String> order = Collections.synchronizedList(new ArrayList<>());
@@ -60,8 +62,6 @@ class PublishListenerTest {
             }
             assertEquals(List.of("listener", "subscriber"), order,
                     "the listener must fire before dispatch");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         } finally {
             orch.close();
         }
@@ -71,30 +71,35 @@ class PublishListenerTest {
     void everyListenerGetsTheSameTimestamp() throws Exception {
         Orchestrator orch = Orchestrator.create("timestamps");
         try {
-            long[] first = new long[1];
-            long[] second = new long[1];
-            List<Long> slow = new ArrayList<>();
-            List<Long> fast = new ArrayList<>();
+            // "Did it run" is recorded as a flag, never inferred from the
+            // timestamp. System.nanoTime() has an arbitrary origin and its
+            // values may be zero or negative, so `nanos > 0` can fail on a
+            // perfectly good clock -- and when it does, it blames the clock for
+            // a listener that ran perfectly well.
+            AtomicBoolean slowRan = new AtomicBoolean();
+            AtomicBoolean fastRan = new AtomicBoolean();
+            AtomicLong first = new AtomicLong();
+            AtomicLong second = new AtomicLong();
 
             orch.addPublishListener((t, v, nanos) -> {
-                slow.add(nanos);
+                slowRan.set(true);
                 try {
                     Thread.sleep(20);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
-                first[0] = nanos;
+                first.set(nanos);
             });
             orch.addPublishListener((t, v, nanos) -> {
-                fast.add(nanos);
-                second[0] = nanos;
+                fastRan.set(true);
+                second.set(nanos);
             });
 
             orch.publish("t", 1.0);
 
-            assertTrue(first[0] > 0, "the first listener should have run");
-            assertTrue(second[0] > 0, "the second listener should have run");
-            assertEquals(first[0], second[0],
+            assertTrue(slowRan.get(), "the first listener should have run");
+            assertTrue(fastRan.get(), "the second listener should have run");
+            assertEquals(first.get(), second.get(),
                     "a slow first listener must not shift the timestamp later ones see");
         } finally {
             orch.close();
@@ -102,9 +107,13 @@ class PublishListenerTest {
     }
 
     @Test
-    void aThrowingListenerDoesNotBreakThePublish() {
+    void aThrowingListenerDoesNotBreakThePublish() throws Exception {
         Orchestrator orch = Orchestrator.create("throwing");
         try {
+            // Plain ArrayList: the listener runs inline on the publishing
+            // thread, which here is the test thread, so nothing else touches
+            // this list. The subscriber below is dispatched to the callback
+            // pool, so its counter has to be atomic.
             List<String> seen = new ArrayList<>();
             AtomicInteger subscriberCalls = new AtomicInteger();
 
@@ -125,8 +134,6 @@ class PublishListenerTest {
                 Thread.sleep(1);
             }
             assertEquals(1, subscriberCalls.get(), "subscribers must still be dispatched");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         } finally {
             orch.close();
         }
@@ -177,6 +184,8 @@ class PublishListenerTest {
     void listenersAreCalledInRegistrationOrder() {
         Orchestrator orch = Orchestrator.create("order-registration");
         try {
+            // Plain ArrayList: registration order is only meaningful because
+            // all three listeners run inline on this thread.
             List<String> order = new ArrayList<>();
             orch.addPublishListener((t, v, n) -> order.add("first"));
             orch.addPublishListener((t, v, n) -> order.add("second"));
@@ -201,8 +210,72 @@ class PublishListenerTest {
             orch.publish("t", 1.0);
             long after = System.nanoTime();
 
-            assertTrue(seen[0] >= before && seen[0] <= after,
+            // nanoTime values are only meaningful as differences: the origin
+            // is arbitrary and the sequence wraps. Comparing raw values with
+            // >= / <= happens to work while the counter is small and
+            // positive, which is exactly why the bug is easy to miss.
+            assertTrue(seen[0] - before >= 0 && after - seen[0] >= 0,
                     "listener timestamp " + seen[0] + " should fall within the publish window");
+        } finally {
+            orch.close();
+        }
+    }
+
+    @Test
+    void aListenerThrowingANonFatalErrorStillDoesNotBreakThePublish() throws Exception {
+        // The boundary is not Exception. On a robot the realistic way a
+        // diagnostics module breaks is a failed assertion or a module that no
+        // longer links against the robot build -- AssertionError,
+        // NoClassDefFoundError, and friends are all Errors, and all of them
+        // must be contained just like a RuntimeException is. This is what makes
+        // narrowing the catch to Exception the wrong fix.
+        Orchestrator orch = Orchestrator.create("throwing-error", LogSink.SILENT);
+        try {
+            AtomicBoolean afterRan = new AtomicBoolean();
+            orch.addPublishListener((t, v, n) -> {
+                throw new NoClassDefFoundError("com/example/recorder/Recorder");
+            });
+            orch.addPublishListener((t, v, n) -> afterRan.set(true));
+            AtomicInteger delivered = new AtomicInteger();
+            orch.subscribe("t", Double.class, v -> delivered.incrementAndGet());
+
+            assertDoesNotThrow(() -> orch.publish("t", 1.0),
+                    "an Error from a listener must not break the publish");
+            assertTrue(afterRan.get(), "listeners after the failing one must still run");
+            assertEquals(1.0, orch.getLatestValue("t", Double.class).orElseThrow(),
+                    "the publish itself must still complete");
+
+            awaitCount(delivered, 1);
+            assertEquals(1, delivered.get(), "subscribers must still be dispatched");
+        } finally {
+            orch.close();
+        }
+    }
+
+    @Test
+    void aListenerThrowingAVirtualMachineErrorIsNotContained() {
+        // The one documented exception to "instrumentation can never break the
+        // bus": once the JVM itself is compromised there is no useful publish
+        // left to protect. Carrying on to the next listener would only allocate
+        // more, so the fatal error is re-thrown rather than logged and ignored.
+        // Pinned here so the carve-out stays deliberate and cannot widen by
+        // accident.
+        Orchestrator orch = Orchestrator.create("throwing-vm-error", LogSink.SILENT);
+        try {
+            AtomicBoolean afterRan = new AtomicBoolean();
+            AtomicInteger delivered = new AtomicInteger();
+            orch.addPublishListener((t, v, n) -> {
+                throw new OutOfMemoryError("listener exhausted the heap");
+            });
+            orch.addPublishListener((t, v, n) -> afterRan.set(true));
+            orch.subscribe("t", Double.class, v -> delivered.incrementAndGet());
+
+            assertThrows(OutOfMemoryError.class, () -> orch.publish("t", 1.0),
+                    "a JVM-fatal error from a listener must propagate, not be swallowed");
+            assertFalse(afterRan.get(),
+                    "the remaining listeners must not run once the JVM is out of memory");
+            assertEquals(0, delivered.get(),
+                    "subscriber dispatch must not run once the JVM is out of memory");
         } finally {
             orch.close();
         }
@@ -282,7 +355,7 @@ class PublishListenerTest {
     }
 
     @Test
-    void aListenerUnregisteringAnotherMidPublishDoesNotBreakTheBus() {
+    void aListenerUnregisteringAnotherMidPublishDoesNotBreakTheBus() throws Exception {
         // Regression test, single-threaded and deterministic. The listener
         // loop originally iterated with size() and get(i), each of which reads
         // the current CopyOnWriteArrayList array independently. A listener
@@ -436,15 +509,10 @@ class PublishListenerTest {
     }
 
     /** Poll until {@code counter} reaches {@code target} or the deadline passes. */
-    private static void awaitCount(AtomicInteger counter, int target) {
+    private static void awaitCount(AtomicInteger counter, int target) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
         while (counter.get() < target && System.nanoTime() < deadline) {
-            try {
-                Thread.sleep(1);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return;
-            }
+            Thread.sleep(1);
         }
     }
 

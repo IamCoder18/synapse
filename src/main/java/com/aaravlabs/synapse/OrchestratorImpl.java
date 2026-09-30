@@ -257,9 +257,19 @@ public final class OrchestratorImpl implements Orchestrator {
             for (PublishListener listener : listeners) {
                 try {
                     listener.onPublish(topicName, value, now);
+                } catch (VirtualMachineError fatal) {
+                    // The deliberate exception to "a listener can never break
+                    // the bus". Once the JVM itself is compromised there is no
+                    // useful publish left to protect: continuing to the next
+                    // listener only allocates more on a heap that is already
+                    // gone. Let it out and let the JVM deal with it.
+                    throw fatal;
                 } catch (Throwable t) {
-                    // Diagnostics must never break the bus: log and carry on
-                    // so the remaining listeners and the subscribers still run.
+                    // Everything else is contained. Catching Throwable rather
+                    // than Exception is the point: a diagnostics module on a
+                    // robot fails with AssertionError or NoClassDefFoundError
+                    // at least as often as it fails with a RuntimeException,
+                    // and none of those may take the bus down.
                     log.error(name, "publish listener threw", t);
                 }
             }

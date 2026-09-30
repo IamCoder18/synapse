@@ -28,7 +28,15 @@ package com.aaravlabs.synapse;
  *
  * <p>A listener that throws is caught, logged, and does not prevent delivery
  * to the other listeners or to subscribers -- instrumentation must never be
- * able to break the bus.
+ * able to break the bus. That includes {@link Error}s: a diagnostics module
+ * that fails an assertion or fails to link against the robot build throws
+ * {@code AssertionError} or {@code NoClassDefFoundError}, not an
+ * {@code Exception}, and must not take the bus down either.
+ *
+ * <p>The single exception is {@link VirtualMachineError}. If a listener leaves
+ * the JVM out of memory or otherwise past recovery, there is no publish worth
+ * protecting, so that error propagates out of {@code publish} instead of being
+ * logged and stepped over.
  *
  * <h2>Cost</h2>
  * When no listener is registered the call costs a single volatile read, so this

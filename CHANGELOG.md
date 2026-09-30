@@ -19,8 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `default` methods so existing `Orchestrator` implementors and test doubles keep
   compiling. Listeners run on the publishing thread, must not block, and are
   called in registration order. A listener that throws is caught and logged, so
-  diagnostics can never break the bus. With no listeners registered, `publish`
-  costs a single volatile read.
+  diagnostics can never break the bus -- including when it throws an `Error`
+  such as `AssertionError` or `NoClassDefFoundError`. The one exception is
+  `VirtualMachineError`: if a listener leaves the JVM out of memory or past
+  recovery, that error propagates out of `publish` instead of being stepped
+  over. With no listeners registered, `publish` costs a single volatile read.
 
   `addPublishListener` throws `UnsupportedOperationException` on an
   implementation that does not support listeners, rather than accepting the
