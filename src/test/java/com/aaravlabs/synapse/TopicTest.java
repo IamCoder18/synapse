@@ -4,9 +4,11 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -97,7 +99,13 @@ class TopicTest {
     @Test
     void subscribe_receivesPublishedValues() throws Exception {
         orchestrator.getOrCreateTopic("t", String.class);
-        List<String> received = new ArrayList<>();
+        // Subscriber callbacks are dispatched to the callback pool
+        // (ThreadPoolExecutor, core 4 / max 16), so they run concurrently on a
+        // different thread than this one: the collection has to be safe for
+        // that, and delivery order is not part of the contract. Asserting a
+        // fixed order here is what made this test flaky -- publish "a" then
+        // "b" and the two callbacks are free to run in either order.
+        List<String> received = new CopyOnWriteArrayList<>();
         orchestrator.subscribe("t", String.class, received::add);
 
         orchestrator.publish("t", "a");
@@ -105,13 +113,15 @@ class TopicTest {
 
         // Callbacks are async; wait briefly.
         await(() -> received.size() >= 2);
-        assertEquals(List.of("a", "b"), received);
+        assertEquals(2, received.size(), "both published values must be delivered");
+        assertEquals(Set.of("a", "b"), new HashSet<>(received),
+                "each published value must be delivered exactly once");
     }
 
     @Test
     void subscribe_unsubscribe_stopsReceiving() throws Exception {
         orchestrator.getOrCreateTopic("t", String.class);
-        List<String> received = new ArrayList<>();
+        List<String> received = new CopyOnWriteArrayList<>();
         Subscription sub = orchestrator.subscribe("t", String.class, received::add);
 
         orchestrator.publish("t", "a");

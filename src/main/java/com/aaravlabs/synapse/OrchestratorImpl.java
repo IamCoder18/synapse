@@ -8,6 +8,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
@@ -202,6 +203,38 @@ public final class OrchestratorImpl implements Orchestrator {
         return Optional.of((Topic<T>) t);
     }
 
+    // ---- publish listeners ------------------------------------------------
+
+    // Copy-on-write: iteration happens on the publishing thread and must be
+    // lock-free, and registration is rare. A volatile read of the field is what
+    // keeps publish cheap when nobody is listening.
+    private final java.util.List<PublishListener> publishListeners = new CopyOnWriteArrayList<>();
+
+    @Override
+    public void addPublishListener(PublishListener listener) {
+        if (listener != null) publishListeners.add(listener);
+    }
+
+    @Override
+    public void removePublishListener(PublishListener listener) {
+        if (listener != null) publishListeners.remove(listener);
+    }
+
+    /**
+     * Package-private: how many listeners are currently registered.
+     *
+     * <p>Exists for one test. Concurrent remove/add of the same listener can
+     * leave duplicates behind -- {@link java.util.concurrent.CopyOnWriteArrayList}
+     * removes only the first equal element -- and a duplicate is invisible to
+     * every other assertion available from outside, because the extra
+     * registration is a no-op that still has to be iterated and logged.
+     * Exposing the size is what lets the churn test enforce the bound it
+     * exists to test rather than merely claim it.
+     */
+    int publishListenerCount() {
+        return publishListeners.size();
+    }
+
     // ---- publish ---------------------------------------------------------
 
     @Override
@@ -213,6 +246,101 @@ public final class OrchestratorImpl implements Orchestrator {
         }
         if (value == null) {
             throw new IllegalArgumentException("publish value cannot be null");
+        }
+
+        // One timestamp for every listener, taken before the type check so a
+        // listener never observes a later instant than the publish itself.
+        // Guarded so the common case -- nobody listening -- is one read.
+        //
+        // Two guards above run *before* this block, so their failures are not
+        // observable through a listener, and the two IllegalArgumentExceptions
+        // this method can throw are not equivalent:
+        //
+        //   closed orchestrator -> warn, return, listeners not notified
+        //   null value          -> throw,    listeners not notified
+        //   type mismatch       -> listeners notified, THEN throw
+        //
+        // The split is argument validation versus a fault in an otherwise real
+        // publish. A closed bus or a null value means the call never became a
+        // publish: no topic was resolved, no latest value recorded, nothing
+        // dispatched -- and there is no value to hand a listener, which is why
+        // onPublish documents its value as never null. A type mismatch happens
+        // after the bus has started acting, and is exactly the kind of fault a
+        // recording should be able to show; the caller still sees the throw.
+        java.util.List<PublishListener> listeners = publishListeners;
+        if (!listeners.isEmpty()) {
+            long now = System.nanoTime();
+            // Iterate, never index. CopyOnWriteArrayList's size() and get(i)
+            // each read the current array independently, so a listener that
+            // unregistered a later one mid-publish left the cached size()
+            // stale and get(i) threw IndexOutOfBoundsException. That call sits
+            // inside the try below, so the bus did not break -- but the loop
+            // aborted, every remaining listener was silently skipped for that
+            // publish, and the log blamed a listener for "throwing" when the
+            // list was merely shorter than expected. The iterator is backed by
+            // a single stable snapshot, so one publish always notifies exactly
+            // the listeners registered when it started.
+            for (PublishListener listener : listeners) {
+                try {
+                    listener.onPublish(topicName, value, now);
+                } catch (OutOfMemoryError heapGone) {
+                    // The one deliberate exception to "a listener can never
+                    // break the bus", and it is exactly one class. Heap
+                    // exhaustion is the only condition where there is no
+                    // publish left worth protecting, because the recovery
+                    // path itself needs memory: log.error builds a message
+                    // and fills in a stack trace, so stepping to the next
+                    // listener would fail a second time in a worse place.
+                    // Let it out and let the JVM deal with it.
+                    throw heapGone;
+                } catch (Throwable t) {
+                    // Everything else is contained, including the sibling
+                    // VirtualMachineErrors. Catching Throwable rather than
+                    // Exception is the point: a diagnostics module on a
+                    // robot fails with AssertionError or NoClassDefFoundError
+                    // at least as often as it fails with a RuntimeException,
+                    // and none of those may take the bus down.
+                    //
+                    // StackOverflowError in particular is the common one and
+                    // is contained on purpose. A listener that recurses
+                    // without a bound blows the stack, the JVM unwinds that
+                    // listener's frames, and the stack is whole again by the
+                    // time we are here -- the heap was never touched. The
+                    // listener's bug is its own; failing the publish, and
+                    // with it every subscriber, would be the hook causing
+                    // the outage it exists to diagnose. If the stack is
+                    // genuinely gone, the log call below raises a fresh
+                    // StackOverflowError that escapes publish anyway, which
+                    // is the right outcome for that case.
+                    //
+                    // InternalError and UnknownError are contained for the
+                    // same reason: both are documented as serious VM
+                    // failures, and no subclass of either marks the fatal
+                    // instance, so this code cannot tell a fatal one from a
+                    // benign one and does not guess. Silence in the hierarchy
+                    // is not evidence that these are harmless, and is not read
+                    // as such. What the hierarchy does settle is the family
+                    // they belong to: neither is an OutOfMemoryError, so no
+                    // instance of either reaches the rethrow above, and
+                    // containment is the whole of the decision. The image is
+                    // scanned across every module in the boot layer for that
+                    // answer, not java.base alone, because catch
+                    // (OutOfMemoryError) matches subclasses from any module:
+                    // UnknownError has no subclass there at all, and the sole
+                    // InternalError subclass is java.util.zip.ZipError. That is
+                    // named as a fact about the family, not as a hazard this
+                    // hook will meet -- the JDK documents ZipError as no longer
+                    // used and obsolete, superseded by ZipException, so a
+                    // corrupt archive raises something else today. What can be
+                    // told is that the bus itself is fine: the fault is inside
+                    // one listener's frame, and the other listeners and the
+                    // subscribers have no dependence on it. Re-throwing a
+                    // VirtualMachineError merely because of its type was the
+                    // bug; the narrow case above is the one that is actually
+                    // unrecoverable.
+                    log.error(name, "publish listener threw", t);
+                }
+            }
         }
 
         // Lazily create the topic from the value's runtime type. This matches
