@@ -314,18 +314,30 @@ public final class OrchestratorImpl implements Orchestrator {
                     // is the right outcome for that case.
                     //
                     // InternalError and UnknownError are contained for the
-                    // same reason: nothing in the JDK's own hierarchy says
-                    // either is fatal. UnknownError has no subclass in
-                    // java.base at all, and the only subclass of InternalError
-                    // there is java.util.zip.ZipError -- a corrupt-archive
-                    // report, raised by the sort of module a diagnostics hook
-                    // is, and the sort of fault to contain rather than to
-                    // propagate. What can be told is that the bus itself is
-                    // fine: the fault is inside one listener's frame, and the
-                    // other listeners and the subscribers have no dependence
-                    // on it. Re-throwing a VirtualMachineError merely because
-                    // of its type was the bug; the narrow case above is the
-                    // one that is actually unrecoverable.
+                    // same reason: both are documented as serious VM
+                    // failures, and no subclass of either marks the fatal
+                    // instance, so this code cannot tell a fatal one from a
+                    // benign one and does not guess. Silence in the hierarchy
+                    // is not evidence that these are harmless, and is not read
+                    // as such. What the hierarchy does settle is the family
+                    // they belong to: neither is an OutOfMemoryError, so no
+                    // instance of either reaches the rethrow above, and
+                    // containment is the whole of the decision. The image is
+                    // scanned across every module in the boot layer for that
+                    // answer, not java.base alone, because catch
+                    // (OutOfMemoryError) matches subclasses from any module:
+                    // UnknownError has no subclass there at all, and the sole
+                    // InternalError subclass is java.util.zip.ZipError. That is
+                    // named as a fact about the family, not as a hazard this
+                    // hook will meet -- the JDK documents ZipError as no longer
+                    // used and obsolete, superseded by ZipException, so a
+                    // corrupt archive raises something else today. What can be
+                    // told is that the bus itself is fine: the fault is inside
+                    // one listener's frame, and the other listeners and the
+                    // subscribers have no dependence on it. Re-throwing a
+                    // VirtualMachineError merely because of its type was the
+                    // bug; the narrow case above is the one that is actually
+                    // unrecoverable.
                     log.error(name, "publish listener threw", t);
                 }
             }

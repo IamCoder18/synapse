@@ -25,14 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the recovery path needs memory too, since logging the error allocates. Every
   other `VirtualMachineError` is contained. `StackOverflowError` is routinely
   recoverable (an unbounded listener recursion unwinds that listener's frames
-  and leaves the stack whole, with the heap untouched), and nothing in the
-  JDK's own hierarchy says `InternalError` or `UnknownError` is fatal --
-  `UnknownError` has no subclass in `java.base` at all, and the only subclass
-  of `InternalError` there is `java.util.zip.ZipError`, a corrupt-archive
-  report that is the sort of fault to contain -- so neither can be told apart
-  from a fatal one without guessing. The bus is not compromised in any of these
-  cases, so the fault stays contained. With no listeners registered, `publish`
-  costs a single volatile read.
+and leaves the stack whole, with the heap untouched). `InternalError` and
+`UnknownError` are both documented as serious VM failures, but no subclass of
+either marks the fatal instance, so `publish` cannot tell a fatal one from a
+benign one and does not guess -- the hierarchy's silence is not read as
+evidence that they are harmless. What it does settle is the family: neither is
+an `OutOfMemoryError`, so no instance of either reaches the one rethrow. That
+is read across every module in the boot layer rather than `java.base` alone,
+because `catch (OutOfMemoryError)` matches subclasses from any module --
+`UnknownError` has no subclass there at all, and the sole `InternalError`
+subclass is `java.util.zip.ZipError`, named as a fact about the family rather
+than a hazard: the JDK documents it as no longer used and superseded by
+`ZipException`, so a corrupt archive raises something else today. The bus is
+not compromised in any of these cases, so the fault stays contained. With no
+listeners registered, `publish` costs a single volatile read.
 
   `addPublishListener` throws `UnsupportedOperationException` on an
   implementation that does not support listeners, rather than accepting the

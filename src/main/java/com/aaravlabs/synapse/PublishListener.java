@@ -61,16 +61,25 @@ package com.aaravlabs.synapse;
  * unbounded recursion in a listener unwinds that listener's frames and leaves
  * the stack whole, with the heap never touched -- so failing the publish, and
  * with it every subscriber, would be the hook causing the outage it exists to
- * diagnose. {@link InternalError} and {@link UnknownError} are contained for a
- * different reason: nothing in the JDK's own hierarchy says either is fatal.
- * {@code UnknownError} has no subclass in {@code java.base} at all, and the
- * only subclass of {@link InternalError} there is
- * {@link java.util.zip.ZipError} -- a corrupt-archive report, raised by the
- * sort of module a diagnostics hook is, and the sort of fault to contain
- * rather than propagate. What can be told is that the bus is not compromised
- * -- the fault is inside one listener's frame, and nothing else on the bus
- * depends on it. Re-throwing by type rather than by consequence was the bug;
- * see {@code OrchestratorImpl.publish}.
+ * diagnose. {@link InternalError} and {@link UnknownError} are contained for
+ * a different reason: both are documented as serious VM failures, and no
+ * subclass of either marks the fatal instance, so {@code publish} cannot tell
+ * a fatal one from a benign one and does not guess. Silence in the hierarchy
+ * is not evidence that these are harmless, and is not read as such. What the
+ * hierarchy does settle is the family they belong to: neither is an {@link
+ * OutOfMemoryError}, so no instance of either can reach the one rethrow
+ * above, and containment is the whole of the decision. The JDK image is
+ * scanned across every module in the boot layer for that answer, not
+ * {@code java.base} alone, because {@code catch (OutOfMemoryError)} matches
+ * subclasses from any module: {@code UnknownError} has no subclass there at
+ * all, and the sole {@link InternalError} subclass is
+ * {@link java.util.zip.ZipError}. {@code ZipError} is named as a fact about
+ * that family, not as a hazard this hook will meet -- the JDK documents it as
+ * no longer used and obsolete, superseded by {@code ZipException}, so a
+ * corrupt archive raises something else today. What can be told is that the
+ * bus is not compromised -- the fault is inside one listener's frame, and
+ * nothing else on the bus depends on it. Re-throwing by type rather than by
+ * consequence was the bug; see {@code OrchestratorImpl.publish}.
  *
  * <h2>Cost</h2>
  * When no listener is registered the call costs a single volatile read, so this

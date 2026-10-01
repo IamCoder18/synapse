@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.net.URI;
-import java.nio.file.DirectoryStream;
 import java.nio.file.FileSystem;
 import java.nio.file.FileSystemAlreadyExistsException;
 import java.nio.file.FileSystems;
@@ -14,7 +13,6 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -22,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -41,6 +40,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PublishListenerTest {
 
     private static final String CLASS_SUFFIX = ".class";
+    private static final String META_INF_PREFIX = "META-INF";
+    private static final String MODULE_INFO = "module-info.class";
+    private static final String JAVA_BASE = "java.base";
 
     @Test
     void listenerSeesEveryPublish() {
@@ -408,19 +410,24 @@ class PublishListenerTest {
         // The previous guard asserted InternalError had no JDK subclass at all,
         // and that assertion was green on every JDK this project runs on only
         // because ZipError was missing from the twenty-entry list it filtered.
-        // So a VirtualMachineError a diagnostics module can genuinely raise --
-        // one reading a corrupt artifact, cache or jar -- sat outside the
-        // coverage entirely.
+        // So the one real member of the containment family that is not a
+        // directly-tested JDK type sat outside the coverage entirely. It is not
+        // a fault a diagnostics module is likely to meet -- the JDK documents
+        // ZipError as no longer used, superseded by ZipException -- which is
+        // exactly why the coverage had to be right rather than incidental.
         //
         // The containment decision is unchanged and is what this pins: ZipError
         // is an InternalError, not an OutOfMemoryError, so the rethrow in
         // OrchestratorImpl.publish never sees it and catch (Throwable) contains
-        // it. A corrupt archive is a fault to contain, not one to fail every
-        // subscriber on the topic over.
+        // it. Containment follows from the family it belongs to, not from any
+        // claim about how reachable it is.
         //
-        // Built reflectively because ZipError is marked for removal on JDK 21
-        // and later, so a direct reference would deprecation-warn on exactly
-        // the JDKs a future maintainer would run this on.
+        // Built reflectively because ZipError is marked for removal from JDK 24
+        // on -- @Deprecated(since = "24", forRemoval = true), read back off the
+        // running JDK -- so a direct reference deprecation-warns on every JDK
+        // from 24 upwards. Below 24 it warns about nothing at all, and this
+        // project is below that, so a direct reference would look perfectly
+        // clean here while breaking on whichever JDK removes the class.
         Object zipError = newZipError();
         Orchestrator orch = Orchestrator.create("throwing-zip-error", LogSink.SILENT);
         try {
@@ -466,33 +473,72 @@ class PublishListenerTest {
         // the contract. If a future JDK adds or reshapes a subclass, this
         // fails and the carve-out has to be re-examined rather than assumed.
         //
-        // The hierarchy is read out of the running JDK by javaBaseClasses()
+        // The hierarchy is read out of the running JDK by bootLayerScan()
         // below, never from a list written in this file. That distinction is
         // the whole test. The previous version filtered a hardcoded
         // twenty-entry list of error classes and compared the result against a
         // hand-written restatement of the same twenty entries, so it could only
         // ever confirm itself: it was green on every JDK while
-        // java.util.zip.ZipError -- java.base's one real InternalError subclass
-        // -- went unexamined, and while a JDK that added a fifth
-        // VirtualMachineError subclass would have left it green too. Its own
-        // comment claimed the opposite.
-        List<Class<?>> javaBase = javaBaseClasses();
+        // java.util.zip.ZipError -- the containment family's one real
+        // InternalError subclass -- went unexamined, and while a JDK that added
+        // a fifth VirtualMachineError subclass would have left it green too. Its
+        // own comment claimed the opposite.
+        //
+        // The scan covers every module resolved in this JVM's boot layer, not
+        // java.base alone. The production carve-out is
+        // catch (OutOfMemoryError heapGone), which matches a subclass from any
+        // module and any loader, so a java.base-only scan was guarding less than
+        // the code it sat next to: an OutOfMemoryError subclass under, say,
+        // jdk.internal.vm would have propagated straight out of publish while
+        // this assertion stayed green.
+        HierarchyScan scan = bootLayerScan();
+        List<Class<?>> bootLayer = scan.classes;
 
-        // Self-check on the scan, so that a scan which silently found nothing
-        // cannot turn every emptiness assertion below into a vacuous pass. The
-        // old version had no equivalent, which is how a wrong "there is no
-        // subclass" could stay green.
+        // Self-checks on the scan, so that a scan which silently saw almost
+        // nothing cannot turn every emptiness assertion below into a vacuous
+        // pass. The old version had no equivalent, which is how a wrong "there
+        // is no subclass" could stay green.
         assertEquals(List.of(Error.class, Exception.class),
-                directSubclassesIn(javaBase, Throwable.class),
+                directSubclassesIn(bootLayer, Throwable.class),
                 "the scan must really find the Throwable roots, or every emptiness assertion below"
                         + " is vacuous and this guard guards nothing");
+
+        // The scan got wider, so the self-check has to check the width too.
+        // java.base alone would satisfy the Throwable assertion above perfectly
+        // while still missing most of the JDK, which is the gap this test exists
+        // to close; asserting that classes from other modules arrived is what
+        // stops that regressing quietly.
+        List<Class<?>> outsideJavaBase = bootLayer.stream()
+                .filter(c -> !JAVA_BASE.equals(c.getModule().getName()))
+                .collect(Collectors.toList());
+        assertFalse(outsideJavaBase.isEmpty(),
+                "the scan must reach modules other than java.base, or it is still narrower than"
+                        + " catch (OutOfMemoryError) in publish, which matches subclasses from any"
+                        + " module. Scan reached: " + scan);
+
+        // A named class from another module, so the widened scope is more than a
+        // bigger number in a counter. The disjunction is deliberate: which
+        // modules end up in the boot layer depends on the JVM's root modules,
+        // and a jlink'd image can be very small, so naming one class would make
+        // this a test of the JDK layout rather than of the scan. Error's own
+        // subclasses are listed below and several of them live outside java.base,
+        // which is the same evidence read off the hierarchy itself.
+        List<String> outsideJavaBaseWitnesses = List.of(
+                "java.awt.AWTError",
+                "javax.xml.transform.TransformerFactoryConfigurationError",
+                "java.util.logging.LogManager",
+                "java.lang.management.ManagementFactory");
+        assertTrue(outsideJavaBase.stream().anyMatch(c -> outsideJavaBaseWitnesses.contains(c.getName())),
+                "the scan must load classes from a module other than java.base, not merely walk its"
+                        + " directories; none of the known non-java.base witnesses "
+                        + outsideJavaBaseWitnesses + " came back. Scan reached: " + scan);
 
         assertEquals(
                 List.of(InternalError.class, OutOfMemoryError.class,
                         StackOverflowError.class, UnknownError.class),
-                directSubclassesIn(javaBase, VirtualMachineError.class),
-                "the direct VirtualMachineError subclasses in this JDK; if this changed, re-review"
-                        + " which of them are recoverable before leaving them contained");
+                directSubclassesIn(bootLayer, VirtualMachineError.class),
+                "the direct VirtualMachineError subclasses in this JDK's boot layer; if this changed,"
+                        + " re-review which of them are recoverable before leaving them contained");
 
         // An empty subclass list is what makes each of these the whole family
         // rather than one member of it, and that is the fact the containment
@@ -501,29 +547,64 @@ class PublishListenerTest {
         // class they throw while a contained sibling escaped as if it were the
         // pinned one -- and OutOfMemoryError is worse still, because a
         // subclass of it would propagate straight out of publish.
-        assertEquals(List.of(), directSubclassesIn(javaBase, OutOfMemoryError.class),
-                "OutOfMemoryError has no subclass in this JDK, so the carve-out is exactly one class;"
-                        + " if this changed, a new subclass would propagate and take the bus down");
-        assertEquals(List.of(), directSubclassesIn(javaBase, StackOverflowError.class),
-                "StackOverflowError has no subclass either, so containment covers the whole family");
-        assertEquals(List.of(), directSubclassesIn(javaBase, UnknownError.class),
-                "UnknownError has no JDK subclass either");
+        //
+        // The bound each of these three states is the boot layer of the running
+        // JVM: "no subclass" is a claim about this JDK image, and the message
+        // says so rather than claiming it for every possible JVM. All three
+        // messages name what was scanned, so a failure says which image it was
+        // a claim about instead of just disagreeing.
+        assertEquals(List.of(), directSubclassesIn(bootLayer, OutOfMemoryError.class),
+                "no module in this JVM's boot layer declares a direct OutOfMemoryError subclass, so"
+                        + " within this JDK image the carve-out is exactly the one class above. That is"
+                        + " a bound on the image, not a universal claim: it covers the "
+                        + scan.modulesWithClasses.size() + " boot modules that contributed classes,"
+                        + " " + scan.classes.size() + " classes in all, and does not cover the"
+                        + " classpath or a child module layer. A subclass anywhere in the boot layer"
+                        + " would be matched by catch (OutOfMemoryError) in publish, propagate out"
+                        + " of it, and take every subscriber on every topic down with it. Scanned: "
+                        + scan);
+        assertEquals(List.of(), directSubclassesIn(bootLayer, StackOverflowError.class),
+                "no module in this JVM's boot layer declares a direct StackOverflowError subclass"
+                        + " either, so containment covers the whole family here. Scanned: " + scan);
+        assertEquals(List.of(), directSubclassesIn(bootLayer, UnknownError.class),
+                "no module in this JVM's boot layer declares a direct UnknownError subclass either."
+                        + " Scanned: " + scan);
 
-        // The assertion the hand-written list got wrong. ZipError is
-        // java.base's only InternalError subclass, so the older claim that
+        // The assertion the hand-written list got wrong. ZipError is the boot
+        // layer's only InternalError subclass, so the older claim that
         // InternalError has no JDK subclass has never been true on any JDK this
         // project runs on. It changes no behaviour -- ZipError is an
         // InternalError and not an OutOfMemoryError, so it is contained, and
         // aListenerThrowingACorruptArchiveZipErrorIsContained pins that -- but
         // a carve-out justified by "no subclass exists" is not a carve-out
-        // anybody has examined.
+        // anybody has examined. It is named here as the family's only concrete
+        // member, not as a fault a listener is likely to raise: the JDK
+        // documents ZipError as no longer used and superseded by ZipException.
         Class<?> zipError = Class.forName("java.util.zip.ZipError", false, null);
-        assertEquals(List.of(zipError), directSubclassesIn(javaBase, InternalError.class),
-                "java.base's only InternalError subclass; a change here means the containment"
+        assertEquals(JAVA_BASE, zipError.getModule().getName(),
+                "ZipError lives in java.base, so it is inside the scan below and not a class the"
+                        + " scan reaches by accident");
+        assertEquals(List.of(zipError), directSubclassesIn(bootLayer, InternalError.class),
+                "the boot layer's only InternalError subclass; a change here means the containment"
                         + " reasoning in PublishListener has to be re-derived from the new shape");
         assertFalse(OutOfMemoryError.class.isAssignableFrom(zipError),
                 "ZipError is an InternalError, not an OutOfMemoryError, so it is contained and never"
                         + " reaches the one rethrow");
+
+        // The boot layer is wider than java.base, so Error has real subclasses
+        // out here that the java.base-only version of this scan never saw --
+        // java.awt.AWTError in java.desktop, several in java.xml. None is a
+        // VirtualMachineError, which is why the VirtualMachineError assertion
+        // above still reads as the four JDK types, and none is an
+        // OutOfMemoryError, which is why the carve-out is still one class. This
+        // is asserted rather than left implicit because it is the concrete proof
+        // that the scan crosses module boundaries.
+        assertTrue(directSubclassesIn(bootLayer, Error.class)
+                        .stream()
+                        .anyMatch(c -> !JAVA_BASE.equals(c.getModule().getName())),
+                "Error must have at least one direct subclass outside java.base on a stock JDK image,"
+                        + " which is what shows this scan is not still confined to java.base. Scanned: "
+                        + scan);
 
         // The class-loading errors a robot build realistically throws do not
         // descend from InternalError at all. They are LinkageErrors, so they
@@ -532,8 +613,9 @@ class PublishListenerTest {
         // scope, and they are covered by
         // aListenerThrowingANonFatalErrorStillDoesNotBreakThePublish.
         // Verified on the running JDK by class name, because ThreadDeath and
-        // ZipError are both marked for removal on recent JDKs.
-        List<Class<?>> linkageSubclasses = directSubclassesIn(javaBase, LinkageError.class);
+        // ZipError are both marked for removal -- ThreadDeath from JDK 20,
+        // ZipError from JDK 24 -- so neither can be named in source here.
+        List<Class<?>> linkageSubclasses = directSubclassesIn(bootLayer, LinkageError.class);
         for (String classLoadingError : List.of("java.lang.ClassFormatError",
                 "java.lang.NoClassDefFoundError", "java.lang.VerifyError",
                 "java.lang.IncompatibleClassChangeError")) {
@@ -552,7 +634,40 @@ class PublishListenerTest {
     }
 
     /**
-     * Every class declared by {@code java.base} on the running JDK, read out of
+     * What {@link #bootLayerScan()} read out of the running JDK: the classes it
+     * loaded, the modules it walked, and which of them actually contributed.
+     *
+     * <p>The counters are carried out of the scan rather than recomputed, so
+     * that "found nothing" can be told apart from "looked at almost nothing".
+     * A scan that visited one module would satisfy every emptiness assertion
+     * in the test above for the wrong reason, which is how the earlier version
+     * of this test was green for the wrong reason.
+     */
+    private static final class HierarchyScan {
+
+        private final List<Class<?>> classes;
+        private final List<String> modulesScanned;
+        private final List<String> modulesWithClasses;
+        private final int unloadable;
+
+        private HierarchyScan(List<Class<?>> classes, List<String> modulesScanned,
+                              List<String> modulesWithClasses, int unloadable) {
+            this.classes = classes;
+            this.modulesScanned = modulesScanned;
+            this.modulesWithClasses = modulesWithClasses;
+            this.unloadable = unloadable;
+        }
+
+        @Override
+        public String toString() {
+            return modulesWithClasses.size() + " of " + modulesScanned.size()
+                    + " boot modules contributed classes (" + classes.size() + " classes, "
+                    + unloadable + " image entries unloadable); modules: " + modulesWithClasses;
+        }
+    }
+
+    /**
+     * Every class declared by any module in this JVM's boot layer, read out of
      * the module image rather than asserted by this project.
      *
      * <p>Two JDK APIs that look like they would do this, and do not:
@@ -562,58 +677,103 @@ class PublishListenerTest {
      * classes it contains. What does work is the {@code jrt:} filesystem, the
      * JVM's own view of the module image.
      *
-     * <p>The package list comes from the module descriptor, and the class list
-     * from those packages' directories, so both halves are JDK-derived and a
-     * new package or a new class appears here without this file changing. It
-     * walks {@code java.base} only, which is where the whole standard error
-     * hierarchy lives -- {@code Error} and {@code Exception} are its only two
-     * roots -- and the sanity assertion in the test above checks that this
-     * scan really does find them.
+     * <p><b>Every boot module, not {@code java.base}.</b> The production
+     * carve-out is {@code catch (OutOfMemoryError heapGone)}, which matches
+     * subclasses defined in any module by any loader, so a scan bounded to
+     * {@code java.base} was guarding strictly less than the code it sat next
+     * to. Measured cost of the widening, on the JDK this was written against:
+     * about 2.6s cold in a fresh JVM for roughly 25k classes across 60 of the
+     * 61 resolved boot modules, against about 0.4s for {@code java.base}
+     * alone. That is the whole trade -- a few seconds of unit-test time for a
+     * guard whose scope finally matches the catch clause. Narrowing this back
+     * to {@code java.base}, or to {@code java.base} plus {@code jdk.*}, to save
+     * that time would reopen the gap, so it is not done and is not hidden.
+     *
+     * <p>Each module is read through <i>its own</i> defining loader, from
+     * {@link Module#getClassLoader()}. Loading every module through the
+     * bootstrap loader instead -- which is what the {@code java.base}-only
+     * version did, correctly, because that is where {@code java.base} lives --
+     * finds nothing at all in the boot modules defined to the platform or
+     * application loader: 40 of 61 on this JDK, including {@code jdk.compiler},
+     * {@code java.sql} and {@code jdk.javadoc}. The scan would have reported
+     * an empty JDK while appearing to work, so
+     * {@link HierarchyScan#toString()} says which modules contributed.
+     *
+     * <p>Nested classes are included. The {@code java.base}-only version
+     * skipped anything with a {@code $} in its name, on the reasoning that a
+     * member class is not a new node in the hierarchy. That reasoning is about
+     * the shape of the tree and it does not transfer to this question: a
+     * nested class whose superclass is {@code OutOfMemoryError} would be
+     * matched by the catch clause exactly like a top-level one. Including them
+     * costs about 11k more classes and no measurable time.
+     *
+     * <p>The bound this establishes, precisely: every class declared by a module
+     * <i>resolved in the boot layer of the running JVM</i>. It does not cover
+     * the classpath or a child module layer, so a {@code jlink}ed image with a
+     * smaller boot layer is a smaller scan, and the assertion messages say so
+     * rather than generalising from it.
      */
-    private static List<Class<?>> javaBaseClasses() throws IOException {
+    private static HierarchyScan bootLayerScan() throws IOException {
         FileSystem jrt = jrtFileSystem();
-        Path moduleRoot = jrt.getPath("/modules/java.base");
-        Set<String> packages = ModuleLayer.boot().findModule("java.base")
-                .map(module -> module.getDescriptor().packages())
-                .orElseThrow(() -> new AssertionError("java.base is not in the boot layer of this JVM,"
-                        + " so its hierarchy cannot be read. A guard that cannot see the hierarchy"
-                        + " must fail loudly, not pass"));
+        List<Module> modules = ModuleLayer.boot().modules().stream()
+                .sorted(Comparator.comparing(Module::getName))
+                .collect(Collectors.toList());
+        if (modules.isEmpty()) {
+            throw new AssertionError("this JVM resolved no modules into the boot layer, so its"
+                    + " hierarchy cannot be read. A guard that cannot see the hierarchy must fail"
+                    + " loudly, not pass");
+        }
 
         List<Class<?>> classes = new ArrayList<>();
-        for (String packageName : packages) {
-            Path packageDir = moduleRoot.resolve(packageName.replace('.', '/'));
-            // A module descriptor may declare a package that holds no classes
-            // at all. That is not a hierarchy change, so it must not be
-            // allowed to fail this test.
-            if (!Files.isDirectory(packageDir)) {
+        List<String> modulesWithClasses = new ArrayList<>();
+        int unloadable = 0;
+        for (Module module : modules) {
+            String moduleName = module.getName();
+            Path moduleRoot = jrt.getPath("/modules/" + moduleName);
+            // A resolved module with no directory in the image is not a
+            // hierarchy change and must not be allowed to fail this test, but
+            // it is counted in modulesScanned so it stays visible.
+            if (!Files.isDirectory(moduleRoot)) {
                 continue;
             }
-            try (DirectoryStream<Path> entries = Files.newDirectoryStream(packageDir)) {
-                for (Path entry : entries) {
-                    String fileName = entry.getFileName().toString();
-                    // Nested classes are skipped: the hierarchy is declared by
-                    // top-level types, and a member class of ZipError is not a
-                    // new node in the error tree.
-                    if (!fileName.endsWith(CLASS_SUFFIX) || fileName.indexOf('$') >= 0) {
+            // The module's own defining loader, not the bootstrap loader: the
+            // class is only loadable by the loader that defines its module, and
+            // using the wrong one silently yields nothing.
+            ClassLoader loader = module.getClassLoader();
+            int before = classes.size();
+            try (Stream<Path> files = Files.walk(moduleRoot, Integer.MAX_VALUE)) {
+                for (Path entry : (Iterable<Path>) files.filter(Files::isRegularFile)::iterator) {
+                    String relative = moduleRoot.relativize(entry).toString();
+                    if (!relative.endsWith(CLASS_SUFFIX)
+                            || relative.startsWith(META_INF_PREFIX)
+                            || MODULE_INFO.equals(relative)) {
                         continue;
                     }
-                    String className = packageName + '.'
-                            + fileName.substring(0, fileName.length() - CLASS_SUFFIX.length());
+                    String className = relative
+                            .substring(0, relative.length() - CLASS_SUFFIX.length())
+                            .replace('/', '.');
                     try {
                         // initialize=false, so reading the JDK's declarations
-                        // cannot run a static initialiser and fail. A null
-                        // loader uses the boot loader, which is where java.base
-                        // lives.
-                        classes.add(Class.forName(className, false, null));
+                        // cannot run a static initialiser and fail.
+                        classes.add(Class.forName(className, false, loader));
                     } catch (ClassNotFoundException | LinkageError notAClass) {
                         // An image entry that is not loadable as a class -- a
                         // resource named like one, or a class this JDK cannot
-                        // link -- is not part of the hierarchy.
+                        // link -- is not part of the hierarchy. It is counted,
+                        // because a scan that skipped a great many entries
+                        // would be a scan that saw less than it claims.
+                        unloadable++;
                     }
                 }
             }
+            if (classes.size() > before) {
+                modulesWithClasses.add(moduleName);
+            }
         }
-        return classes;
+        return new HierarchyScan(classes,
+                modules.stream().map(Module::getName).collect(Collectors.toList()),
+                modulesWithClasses,
+                unloadable);
     }
 
     /**
