@@ -62,7 +62,7 @@ long nanosSinceUpdate = flSnapshot.map(Topic.Latest::ageNanos).orElse(Long.MAX_V
 
 If you only want the value and never check its age, keep using `latestValueOr(0.0)` — it is the same single volatile read, reads better at a glance, and allocates nothing. `latest()` allocates one small `Optional` wrapper per call.
 
-Composing `latestPublishNanos()` and `latestValueOr()` still works. It takes two calls, so a publish can land between them; if you do it, read the timestamp first, and note that it is `0` until the topic's first publish:
+Composing `latestPublishNanos()` and `latestValueOr()` still works. It takes two calls, so a publish can land between them; if you do it, read the timestamp first, and note that the stamp is `0` until the topic's first publish, so guard before subtracting it — otherwise you get the raw `nanoTime()` reading, which is seconds to days rather than an age. That guard is a heuristic, not a proof: `nanoTime()` is permitted to return `0`, so a real publish can carry a `0` stamp too, which over-reports the age and rejects a fresh value — the safe direction.
 
 ```java
 long stamp = flTopic.latestPublishNanos();

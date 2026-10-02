@@ -64,12 +64,18 @@ public final class Topic<T> {
             this.publishNanos = publishNanos;
         }
 
-        /** @return the published value */
+        /**
+         * The published value.
+         *
+         * @return the value published in this snapshot
+         */
         public T value() {
             return value;
         }
 
         /**
+         * When this value was recorded.
+         *
          * @return the {@link System#nanoTime()} at which {@link #value()} was recorded, on
          *         the monotonic clock (arbitrary origin — only differences are meaningful)
          */
@@ -78,9 +84,12 @@ public final class Topic<T> {
         }
 
         /**
-         * @return nanos elapsed since {@link #publishNanos()}, on the monotonic clock.
-         *         Unlike {@code System.nanoTime() - publishNanos()}, this is always the age
-         *         of <i>this</i> value and needs no {@code 0} sentinel handling.
+         * How long ago this value was recorded, measured from its own stamp.
+         *
+         * <p>Unlike {@code System.nanoTime() - publishNanos()}, this is always the age of
+         * <i>this</i> value and needs no {@code 0} sentinel handling.
+         *
+         * @return nanos elapsed since {@link #publishNanos()}, on the monotonic clock
          */
         public long ageNanos() {
             return System.nanoTime() - publishNanos;
@@ -114,14 +123,19 @@ public final class Topic<T> {
      * only if you sample the timestamp <i>first</i>, which can only over-report the age:
      *
      * <pre>{@code
-     * long stamp = topic.latestPublishNanos();  // first; 0 means nothing published yet
+     * long stamp = topic.latestPublishNanos();  // read the timestamp FIRST
      * T v = topic.latestValueOr(null);         // then
      * long age = stamp == 0L ? Long.MAX_VALUE : System.nanoTime() - stamp;
      * }</pre>
      *
-     * <p>The {@code 0} guard matters: before the first publish
-     * {@link #latestPublishNanos()} is {@code 0}, and subtracting it would yield the raw
-     * {@link System#nanoTime()} reading — seconds to days — rather than an age.
+     * <p>The {@code 0} guard handles "nothing published yet", where the stamp is still
+     * its initial {@code 0} and subtracting it would yield the raw
+     * {@link System#nanoTime()} reading. It is a heuristic, not a proof: the JLS permits
+     * {@link System#nanoTime()} to return {@code 0}, so a genuine publish can carry a
+     * {@code 0} stamp too. That case only over-reports the age, which rejects a fresh
+     * value rather than admitting a stale one, so the failure direction is safe.
+     *
+     * <p>{@link #latest()} removes the question entirely: one snapshot read, no sentinel.
      *
      * <p>Reading the value first is the unsafe order: a publish landing between the two
      * calls pairs the older value with the newer timestamp, so an age check on that
@@ -141,7 +155,10 @@ public final class Topic<T> {
      * <p>Sample this before {@link #latestValue()} when the two are used together as a
      * staleness check — see {@link #latestValue()} for the ordering rule.
      *
-     * @return publish timestamp in nanoseconds, or 0 if nothing has been published
+     * @return publish timestamp in nanoseconds, or {@code 0} if nothing has been published
+     *         yet. Note that {@code 0} is also a value {@link System#nanoTime()} is
+     *         permitted to return, so this cannot be used on its own to prove that no
+     *         publish has occurred — see {@link #latestValue()}.
      */
     public long latestPublishNanos() {
         Latest<T> snap = latest;

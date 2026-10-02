@@ -42,7 +42,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   construction, for the per-publish type check. `type()` still reports the type the
   topic was created with — only the internal comparison field is boxed.
 
-  `latestPublishNanos()` still returns `0` before the first publish, unchanged.
+  `latestPublishNanos()` still returns `0` before the first publish, unchanged. That
+  `0` is a heuristic rather than a proof — `System.nanoTime()` is permitted to return
+  `0`, so a genuine publish can carry it too. The resulting over-reported age rejects
+  a fresh value rather than admitting a stale one, so the failure direction is safe.
 
   **Prefer `Topic.latest()` when you need both the value and its age.** It returns the
   two from one snapshot read, so they provably come from the same publish:
@@ -58,7 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   different publishes; if you do compose them, **read the timestamp first**:
 
   ```java
-  long stamp = topic.latestPublishNanos();  // first; 0 means nothing published yet
+  long stamp = topic.latestPublishNanos();  // read the timestamp FIRST
   T v = topic.latestValueOr(null);         // then
   long age = stamp == 0L ? Long.MAX_VALUE : System.nanoTime() - stamp;
   ```
