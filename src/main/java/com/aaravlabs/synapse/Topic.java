@@ -256,6 +256,24 @@ public final class Topic<T> {
      * the two calls by a GC pause or the scheduler, since the window becomes
      * milliseconds. This accessor removes the window entirely.
      *
+     * <p>Unwrap once rather than calling {@code map()} per field: each {@code map()} call
+     * allocates its own {@link Optional} and boxes the {@code long} age, which is
+     * avoidable garbage in a periodic loop.
+     *
+     * <pre>{@code
+     * Optional<Topic.Latest<T>> snap = topic.latest();
+     * T v;
+     * long age;
+     * if (snap.isPresent()) {
+     *     Topic.Latest<T> s = snap.get();
+     *     v = s.value();
+     *     age = s.ageNanos();
+     * } else {
+     *     v = defaultValue;
+     *     age = Long.MAX_VALUE;
+     * }
+     * }</pre>
+     *
      * <p>Returns empty before the first publish.
      *
      * <p><b>Non-empty calls allocate one small {@link Optional} wrapper.</b> Calls before

@@ -101,9 +101,20 @@ listeners registered, `publish` costs a single volatile read.
 
   ```java
   Optional<Topic.Latest<T>> snap = topic.latest();
-  T v = snap.map(Topic.Latest::value).orElse(defaultValue);
-  long age = snap.map(Topic.Latest::ageNanos).orElse(Long.MAX_VALUE);
+  T v;
+  long age;
+  if (snap.isPresent()) {
+      Topic.Latest<T> s = snap.get();
+      v = s.value();
+      age = s.ageNanos();
+  } else {
+      v = defaultValue;
+      age = Long.MAX_VALUE;
+  }
   ```
+
+  Unwrap once rather than calling `map()` per field: each `map()` allocates its own
+  `Optional` and boxes the `long`, which is avoidable garbage in a periodic loop.
 
   `latestPublishNanos()` and `latestValueOr()` are unchanged and still correct. Composing
   them takes two calls, which can straddle a publish and leave the pair describing two

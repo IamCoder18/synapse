@@ -56,11 +56,19 @@ Topic<Double> flTopic = orchestrator.findTopic("drive/power/fl", Double.class).o
 // come from different publishes. ageNanos() is the age of this exact value, and needs no
 // sentinel handling before the first publish -- latest() is simply empty then.
 Optional<Topic.Latest<Double>> flSnapshot = flTopic.latest();
-double fl2 = flSnapshot.map(Topic.Latest::value).orElse(0.0);
-long nanosSinceUpdate = flSnapshot.map(Topic.Latest::ageNanos).orElse(Long.MAX_VALUE);
+double fl2;
+long nanosSinceUpdate;
+if (flSnapshot.isPresent()) {
+    Topic.Latest<Double> snapshot = flSnapshot.get();
+    fl2 = snapshot.value();
+    nanosSinceUpdate = snapshot.ageNanos();
+} else {
+    fl2 = 0.0;
+    nanosSinceUpdate = Long.MAX_VALUE;
+}
 ```
 
-If you only want the value and never check its age, keep using `latestValueOr(0.0)` -- it is the same single volatile read, reads better at a glance, and never allocates. A `latest()` call that returns a value allocates one small `Optional` wrapper; a call before the first publish returns the shared empty instance and allocates nothing.
+If you only want the value and never check its age, keep using `latestValueOr(0.0)` -- it is the same single volatile read, reads better at a glance, and never allocates. A `latest()` call that returns a value allocates one small `Optional` wrapper; a call before the first publish returns the shared empty instance and allocates nothing. That is why the example unwraps with `isPresent()`/`get()` rather than calling `map()` twice — each `map()` would allocate its own `Optional` and box the `long` age. This matters in a periodic loop.
 
 Composing `latestPublishNanos()` and `latestValueOr()` still works. It takes two calls, so a publish can land between them; if you do it, read the timestamp first. Note that the stamp is `0` until the topic's first publish, so guard before subtracting it -- otherwise you get the raw `nanoTime()` reading, which is seconds to days rather than an age. That guard is a heuristic, not a proof: `nanoTime()` is permitted to return `0`, so a real publish can carry a `0` stamp too, which over-reports the age and rejects a fresh value -- the safe direction.
 
