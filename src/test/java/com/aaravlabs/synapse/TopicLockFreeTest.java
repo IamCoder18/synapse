@@ -274,24 +274,30 @@ class TopicLockFreeTest {
         // origin, so a published snapshot may legitimately carry 0. The present Optional
         // already proves a publish happened, which is the property worth checking here.
 
-        // ageNanos is the age of THIS value, computed from its own stamp. Bracketing the
-        // call between two clock reads pins it exactly: the age must fall between the
-        // delta from each reading to that stamp. A single-sided check is not enough -- an
-        // implementation returning a constant 0 would satisfy "not older than a later
-        // reading" while reporting nothing about the actual age.
+        // ageNanos must be the age of THIS value, from ITS OWN stamp.
+        //
+        // Comparing ageNanos() against `now - publishNanos()` cannot establish that:
+        // both sides recompute the same subtraction, so the relation holds for any pair
+        // and a Latest carrying a foreign stamp still passes. What actually pins the
+        // stamp to this value is the cross-check above -- latest().publishNanos() equals
+        // latestPublishNanos() equals the stamp of the "a" publish -- combined with a
+        // non-negative age and a stamp that is not in the future.
         //
         // Both bounds are relative to the clock, not absolute wall-clock deadlines: a
         // snapshot read in the same tick as its own publish legitimately reports age 0,
-        // and a GC pause between the publish and this read can legitimately make it
-        // arbitrarily large.
-        long before = System.nanoTime();
+        // and a GC pause between the publish and this read can legitimately make the
+        // age arbitrarily large.
+        // The clock reads must bracket the ageNanos() call itself; a reading taken
+        // outside it cannot bound the result in either direction, because a pause
+        // between the reading and the call would break the relation.
+        long ageBefore = System.nanoTime();
         long age = first.ageNanos();
-        long after = System.nanoTime();
+        long ageAfter = System.nanoTime();
         assertTrue(age >= 0, "ageNanos must not be negative: " + age);
-        assertTrue(age >= before - first.publishNanos(),
-                "ageNanos " + age + " is older than the clock read taken just before it");
-        assertTrue(age <= after - first.publishNanos(),
-                "ageNanos " + age + " is younger than the clock read taken just after it");
+        assertTrue(age >= ageBefore - first.publishNanos()
+                        && age <= ageAfter - first.publishNanos(),
+                "ageNanos " + age + " is not the age of stamp " + first.publishNanos()
+                        + " measured between " + ageBefore + " and " + ageAfter);
 
         // A later publish replaces both halves together; there is no observable state in
         // which one half is from this publish and the other from the previous one.
@@ -314,8 +320,8 @@ class TopicLockFreeTest {
         // Sampled at different moments the comparison depends on how long each call took,
         // so a pause between the publish and the second read could make the newer value
         // look older. From a single now, a strictly later stamp is a strictly smaller age.
-        long now = System.nanoTime();
-        assertTrue(now - second.publishNanos() < now - first.publishNanos(),
+        long laterNow = System.nanoTime();
+        assertTrue(laterNow - second.publishNanos() < laterNow - first.publishNanos(),
                 "the newer value must report a younger age");
     }
 
