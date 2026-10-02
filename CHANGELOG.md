@@ -96,13 +96,32 @@ listeners registered, `publish` costs a single volatile read.
   `0`, so a genuine publish can carry it too. The resulting over-reported age rejects
   a fresh value rather than admitting a stale one, so the failure direction is safe.
 
-  **Read the timestamp before the value** when you use the two together as a
-  staleness check. Each accessor now returns a self-consistent pair, but two separate
-  calls can still straddle a publish, so the ordering rule remains — it is now
-  documented on the public accessors and in the topics guide:
+  **Prefer `Topic.latest()` when you need both the value and its age.** It returns the
+  two from one snapshot read, so they provably come from the same publish:
 
   ```java
-  long stamp = topic.latestPublishNanos();  // first
+  Optional<Topic.Latest<T>> snap = topic.latest();
+  T v;
+  long age;
+  if (snap.isPresent()) {
+      Topic.Latest<T> s = snap.get();
+      v = s.value();
+      age = s.ageNanos();
+  } else {
+      v = defaultValue;
+      age = Long.MAX_VALUE;
+  }
+  ```
+
+  Unwrap once rather than calling `map()` per field: each `map()` allocates its own
+  `Optional` and boxes the `long`, which is avoidable garbage in a periodic loop.
+
+  `latestPublishNanos()` and `latestValueOr()` are unchanged and still correct. Composing
+  them takes two calls, which can straddle a publish and leave the pair describing two
+  different publishes; if you do compose them, **read the timestamp first**:
+
+  ```java
+  long stamp = topic.latestPublishNanos();  // read the timestamp FIRST
   T v = topic.latestValueOr(null);         // then
   long age = stamp == 0L ? Long.MAX_VALUE : System.nanoTime() - stamp;
   ```
