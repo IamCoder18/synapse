@@ -156,6 +156,16 @@ public final class OrchestratorImpl implements Orchestrator {
                                 + existing.type().getName() + ", cannot re-create as "
                                 + type.getName());
             }
+            if (!existing.safelyReturnsAs(type)) {
+                // compatible, but this topic may hold values the caller cannot cast to T.
+                // Returning it anyway defers a ClassCastException to an unrelated line.
+                throw new IllegalArgumentException(
+                        "Topic '" + topicName + "' holds "
+                                + existing.type().getSimpleName() + ", which cannot be "
+                                + "returned as " + type.getName()
+                                + "; read it via findTopic(name) and treat the value as "
+                                + existing.type().getName());
+            }
             return (Topic<T>) existing;
         }
 
@@ -168,7 +178,48 @@ public final class OrchestratorImpl implements Orchestrator {
                                 + prior.type().getName() + ", cannot re-create as "
                                 + type.getName());
             }
+            if (!prior.safelyReturnsAs(type)) {
+                throw new IllegalArgumentException(
+                        "Topic '" + topicName + "' holds "
+                                + prior.type().getSimpleName() + ", which cannot be "
+                                + "returned as " + type.getName()
+                                + "; read it via findTopic(name) and treat the value as "
+                                + prior.type().getName());
+            }
             return (Topic<T>) prior;
+        }
+        log.info(name, "created topic " + created);
+        return created;
+    }
+
+    /**
+     * Topic lookup that skips the cast-safety check for callers whose handler receives
+     * {@code Object}. Used by the annotation binder, where an Object-typed topic is a
+     * supported configuration rather than a mistake.
+     */
+    private Topic<?> getOrCreateTopicUnchecked(String topicName, Class<?> type) {
+        Objects.requireNonNull(topicName, "topicName");
+        Objects.requireNonNull(type, "type");
+        Topic<?> existing = topics.get(topicName);
+        if (existing != null) {
+            if (!existing.acceptsType(type)) {
+                throw new IllegalArgumentException(
+                        "Topic '" + topicName + "' already exists with type "
+                                + existing.type().getName() + ", cannot re-create as "
+                                + type.getName());
+            }
+            return existing;
+        }
+        Topic<?> created = new Topic<>(topicName, type);
+        Topic<?> prior = topics.putIfAbsent(topicName, created);
+        if (prior != null) {
+            if (!prior.acceptsType(type)) {
+                throw new IllegalArgumentException(
+                        "Topic '" + topicName + "' already exists with type "
+                                + prior.type().getName() + ", cannot re-create as "
+                                + type.getName());
+            }
+            return prior;
         }
         log.info(name, "created topic " + created);
         return created;
@@ -183,7 +234,9 @@ public final class OrchestratorImpl implements Orchestrator {
     @SuppressWarnings("unchecked")
     public <T> Optional<Topic<T>> findTopic(String topicName, Class<T> type) {
         Topic<?> t = topics.get(topicName);
-        if (t == null || !t.acceptsType(type)) return Optional.empty();
+        if (t == null || !t.acceptsType(type) || !t.safelyReturnsAs(type)) {
+            return Optional.empty();
+        }
         return Optional.of((Topic<T>) t);
     }
 
@@ -365,7 +418,15 @@ public final class OrchestratorImpl implements Orchestrator {
                                       Consumer<? super T> handler) {
         Objects.requireNonNull(handler, "handler");
         Topic<T> topic = getOrCreateTopic(topicName, type);
-        MessageHandler wrapped = msg -> handler.accept(type.cast(msg));
+        // Class.cast() returns false for every argument when the class is primitive, so
+        // casting with the raw type made every delivery throw ClassCastException, which
+        // dispatchCallback swallowed into a log line -- the subscriber was registered,
+        // never fired, and nothing else indicated why. Box the type for the runtime check;
+        // Consumer<? super T> erases to accept(Object), so no cast on T is needed and
+        // none would survive erasure anyway.
+        final Class<?> boxedType = Topic.box(type);
+        @SuppressWarnings("unchecked")
+        MessageHandler wrapped = msg -> ((Consumer<Object>) handler).accept(boxedType.cast(msg));
         SubscriberList list = subscribers.computeIfAbsent(topic, k -> new SubscriberList());
         list.add(wrapped);
         return new Subscription(topic, wrapped, this);
@@ -374,7 +435,11 @@ public final class OrchestratorImpl implements Orchestrator {
     /** Raw subscribe used by the annotation binder where the parameter type is reflective. */
     public Subscription subscribeRaw(String topicName, Class<?> type,
                                      java.util.function.Consumer<Object> handler) {
-        Topic<?> topic = getOrCreateTopic(topicName, type);
+        // Deliberately no safelyReturnsAs check. This path exists for the annotation
+        // binder, which uses Object as the topic type when handlers of differing
+        // parameter types share a topic and does its own per-message isInstance filter.
+        // The handler receives Object, so a wider topic is correct rather than unsafe.
+        Topic<?> topic = getOrCreateTopicUnchecked(topicName, type);
         MessageHandler wrapped = handler::accept;
         SubscriberList list = subscribers.computeIfAbsent(topic, k -> new SubscriberList());
         list.add(wrapped);
@@ -384,7 +449,14 @@ public final class OrchestratorImpl implements Orchestrator {
     void removeSubscription(Subscription sub) {
         Topic<?> t = sub.topic();
         SubscriberList list = subscribers.get(t);
-        if (list != null) list.remove(sub.handler());
+        // markSubscriptionAsHardwareThreaded may have replaced the list entry with a
+        // wrapper, so look for whichever handler is actually registered. Searching only
+        // sub.handler() missed the wrapper and left an unregistered @OnHardwareThread
+        // subscriber running -- it kept receiving publishes, so an unregistered node
+        // could still drive the hardware.
+        MessageHandler registered = hardwareRerouted.getOrDefault(sub, sub.handler());
+        if (list != null) list.remove(registered);
+        hardwareRerouted.remove(sub);
     }
 
     /**
@@ -407,11 +479,10 @@ public final class OrchestratorImpl implements Orchestrator {
                 }
             });
         };
-        // Replace in the list. Subscription object's handler() returns the
-        // original so removeSubscription still works correctly.
+        // Replace in the list. sub.handler() keeps returning the original so callers see
+        // a stable identity, and hardwareRerouted records which handler actually sits in
+        // the list so removeSubscription can find and remove exactly that one.
         list.replace(original, wrapped);
-        // Stash the wrapped handler so subscribers still see the original via
-        // sub.handler() (which is unchanged), but the dispatch uses wrapped.
         hardwareRerouted.put(sub, wrapped);
     }
 
@@ -423,7 +494,13 @@ public final class OrchestratorImpl implements Orchestrator {
     @SuppressWarnings("unchecked")
     public <T> Optional<T> getLatestValue(String topicName, Class<T> type) {
         Topic<?> t = topics.get(topicName);
-        if (t == null || !t.acceptsType(type)) return Optional.empty();
+        // safelyReturnsAs, not just acceptsType: an Object topic accepts a request for
+        // Integer, but handing back Optional<Integer> when the stored value is a String
+        // moves a ClassCastException to the caller's own site, after isPresent() has
+        // already told them the value is there.
+        if (t == null || !t.acceptsType(type) || !t.safelyReturnsAs(type)) {
+            return Optional.empty();
+        }
         return (Optional<T>) t.latestValue();
     }
 

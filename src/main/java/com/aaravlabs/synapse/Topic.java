@@ -218,6 +218,21 @@ public final class Topic<T> {
     }
 
     /**
+     * Whether a caller asking for {@code requested} can be handed this topic as a
+     * {@code Topic<requested>} without a ClassCastException later.
+     *
+     * <p>Strictly stronger than {@link #acceptsType}: that only asks whether the
+     * requested type is compatible with this topic, so an {@code Object} topic accepts a
+     * request for {@code String}. Handing back {@code Topic<String>} for a topic that may
+     * hold any {@code Object} is not safe — the cast is erased, so the failure surfaces
+     * later at the caller's own site, possibly on the hardware thread. Callers that
+     * receive the topic as {@code Topic<Object>} are unaffected.
+     */
+    boolean safelyReturnsAs(Class<?> requested) {
+        return box(requested).isAssignableFrom(boxedType);
+    }
+
+    /**
      * Returns the most recent value, falling back to {@code defaultValue} if nothing has
      * been published yet. Convenience for {@code topic.latestValue().orElse(default)}.
      *
@@ -288,7 +303,7 @@ public final class Topic<T> {
     }
 
     /** Treat primitive {@code double.class} and wrapper {@code Double.class} as the same type. */
-    private static Class<?> box(Class<?> c) {
+    static Class<?> box(Class<?> c) {
         if (!c.isPrimitive()) return c;
         if (c == int.class)     return Integer.class;
         if (c == long.class)    return Long.class;
