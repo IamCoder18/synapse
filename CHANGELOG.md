@@ -36,7 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   Each publish therefore allocates one small short-lived pair on the write path.
   The read path is unchanged in allocation terms: `latestValueOr()` allocates
-  nothing.
+  nothing, while `latestValue()` wraps its result in an `Optional` as it did
+  before.
 
   The topic's declared type is now normalized to its wrapper class **once**, at
   construction, for the per-publish type check. `type()` still reports the type the

@@ -176,7 +176,9 @@ public final class Topic<T> {
      * interleave between the writes and leave the pair describing two different
      * publishes. The <b>write path takes the topic monitor</b>, around the clock sample,
      * one short-lived allocation and the store — see below. Each publish therefore
-     * allocates; {@link #latestValueOr(Object)} does not.
+     * allocates; on the read side {@link #latestValueOr(Object)} allocates nothing,
+     * while {@link #latestValue()} and {@link #latest()} each wrap their result in an
+     * {@link Optional}.
      *
      * @param value the value to record
      */
@@ -189,9 +191,9 @@ public final class Topic<T> {
         // staleness check can pass a value that is already stale.
         //
         // The critical section is a clock read, an allocation and a volatile store --
-        // NOT "two field writes and a clock read". Each publish allocates one 24-byte
-        // Latest, which is not scalar-replaceable because it escapes into a volatile
-        // field, so garbage scales with publish rate across every topic.
+        // NOT "two field writes and a clock read". Each publish allocates one Latest,
+        // which is not scalar-replaceable because it escapes into a volatile field, so
+        // garbage scales with publish rate across every topic.
         //
         // Hoisting the allocation above the monitor was measured and is not a win: it
         // gains ~12 ns/publish uncontended but loses ~10-20 ns under four publishers,

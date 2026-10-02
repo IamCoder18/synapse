@@ -54,15 +54,15 @@ Topic<Double> flTopic = orchestrator.findTopic("drive/power/fl", Double.class).o
 
 // One snapshot read gives the value and its timestamp together, so the two can never
 // come from different publishes. ageNanos() is the age of this exact value, and needs no
-// special handling before the first publish -- latest() is simply empty then.
+// sentinel handling before the first publish -- latest() is simply empty then.
 Optional<Topic.Latest<Double>> flSnapshot = flTopic.latest();
 double fl2 = flSnapshot.map(Topic.Latest::value).orElse(0.0);
 long nanosSinceUpdate = flSnapshot.map(Topic.Latest::ageNanos).orElse(Long.MAX_VALUE);
 ```
 
-If you only want the value and never check its age, keep using `latestValueOr(0.0)` — it is the same single volatile read, reads better at a glance, and allocates nothing. `latest()` allocates one small `Optional` wrapper per call.
+If you only want the value and never check its age, keep using `latestValueOr(0.0)` -- it is the same single volatile read, reads better at a glance, and allocates nothing. `latest()` allocates one small `Optional` wrapper per call.
 
-Composing `latestPublishNanos()` and `latestValueOr()` still works. It takes two calls, so a publish can land between them; if you do it, read the timestamp first, and note that the stamp is `0` until the topic's first publish, so guard before subtracting it — otherwise you get the raw `nanoTime()` reading, which is seconds to days rather than an age. That guard is a heuristic, not a proof: `nanoTime()` is permitted to return `0`, so a real publish can carry a `0` stamp too, which over-reports the age and rejects a fresh value — the safe direction.
+Composing `latestPublishNanos()` and `latestValueOr()` still works. It takes two calls, so a publish can land between them; if you do it, read the timestamp first. Note that the stamp is `0` until the topic's first publish, so guard before subtracting it -- otherwise you get the raw `nanoTime()` reading, which is seconds to days rather than an age. That guard is a heuristic, not a proof: `nanoTime()` is permitted to return `0`, so a real publish can carry a `0` stamp too, which over-reports the age and rejects a fresh value -- the safe direction.
 
 ```java
 long stamp = flTopic.latestPublishNanos();
