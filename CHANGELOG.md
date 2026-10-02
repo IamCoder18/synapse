@@ -67,6 +67,50 @@ listeners registered, `publish` costs a single volatile read.
 - **`@SubscribedTo` dispatch no longer re-boxes the parameter type per message.**
   The primitive-to-wrapper normalisation is computed once at bind time instead
   of on every delivered message. Equivalent to the previous conditional check.
+- **`Topic` latest-value reads no longer synchronize.** `latestValue()` and
+  `latestPublishNanos()` are plain volatile reads. The latest value and its
+  timestamp are published together as one immutable pair through a single volatile
+  field, so a reader always sees a value and a timestamp from the same publish.
+  `publish` is reachable from the OpMode loop, the hardware thread, and the callback
+  pool, so two publishers really can overlap.
+
+  The write path still takes the topic monitor, but only around the clock sample,
+  one short-lived allocation and the store. Two separate volatile fields would let
+  two publishers interleave between the value write and the timestamp write;
+  sampling the clock outside mutual exclusion would let a preempted publisher
+  install an older pair after a newer one. Both regressions were reproduced and
+  fixed; keeping the monitor on the write path preserves the ordering the previous
+  `synchronized` body provided.
+
+  Each publish therefore allocates one small short-lived pair on the write path.
+  The read path is unchanged in allocation terms: `latestValueOr()` allocates
+  nothing, while `latestValue()` wraps its result in an `Optional` as it did
+  before.
+
+  The topic's declared type is now normalized to its wrapper class **once**, at
+  construction, for the per-publish type check. `type()` still reports the type the
+  topic was created with — only the internal comparison field is boxed.
+
+  `latestPublishNanos()` still returns `0` before the first publish, unchanged. That
+  `0` is a heuristic rather than a proof — `System.nanoTime()` is permitted to return
+  `0`, so a genuine publish can carry it too. The resulting over-reported age rejects
+  a fresh value rather than admitting a stale one, so the failure direction is safe.
+
+  **Read the timestamp before the value** when you use the two together as a
+  staleness check. Each accessor now returns a self-consistent pair, but two separate
+  calls can still straddle a publish, so the ordering rule remains — it is now
+  documented on the public accessors and in the topics guide:
+
+  ```java
+  long stamp = topic.latestPublishNanos();  // first
+  T v = topic.latestValueOr(null);         // then
+  long age = stamp == 0L ? Long.MAX_VALUE : System.nanoTime() - stamp;
+  ```
+
+  Reading the value first and the timestamp second can pair an older value with a
+  newer timestamp, so an age check on that pair passes even though the value is
+  stale. Reading the timestamp first can only over-report the age, never under-report
+  it.
 
 ## [0.4.0] - 2026-09-12
 
