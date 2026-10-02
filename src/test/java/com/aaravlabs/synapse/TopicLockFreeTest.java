@@ -367,12 +367,21 @@ class TopicLockFreeTest {
         assertEquals("b", second.value());
         assertTrue(second.publishNanos() > first.publishNanos(),
                 "a later publish must carry a later stamp");
-        // Actually call ageNanos() on both snapshots. Deriving both ages from one clock reading
+        // Actually call ageNanos() on both snapshots -- deriving both from one clock reading
         // would reduce to a restatement of the strictly-later-stamp assertion above and
-        // would never exercise ageNanos at all.
-        assertTrue(second.ageNanos() <= first.ageNanos(),
-                "the newer value must not report a younger age than the one it replaced: "
-                        + second.ageNanos() + " vs " + first.ageNanos());
+        // would never exercise ageNanos at all. The two calls sample the clock separately,
+        // so the elapsed span between them is measured and allowed for: that span is the
+        // sampling skew, and only skew of that size could let the newer value report the
+        // older age. Clock readings either side keep the allowance honest rather than
+        // granting an unbounded tolerance.
+        long skewBefore = System.nanoTime();
+        long secondAge = second.ageNanos();
+        long firstAge = first.ageNanos();
+        long skewAfter = System.nanoTime();
+        long maxSkew = skewAfter - skewBefore;
+        assertTrue(secondAge <= firstAge + maxSkew,
+                "the newer value must not report an older age than the one it replaced: "
+                        + secondAge + " vs " + firstAge + " (clock skew allowance " + maxSkew + ")");
     }
 
     @Test

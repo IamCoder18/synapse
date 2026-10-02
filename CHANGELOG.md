@@ -146,7 +146,8 @@ listeners registered, `publish` costs a single volatile read.
 - **Typed lookups no longer hand back a topic that cannot be cast to the requested
   type.** An `Object` topic accepts a request for `String`, and the unchecked cast then
   failed later at the caller's own line — after `isPresent()` had reported a value. The
-  request is now refused with a message naming the actual type. Narrowing to a type the
+  request is now refused. `getOrCreateTopic` throws with a message naming the actual
+  type; `findTopic` and `getLatestValue` return empty. Narrowing to a type the
   topic really holds still works, and `subscribeRaw` (used by the annotation binder)
   still accepts an `Object` topic.
 
