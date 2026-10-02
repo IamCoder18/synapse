@@ -48,8 +48,19 @@ Base class for robot logic. `protected final Orchestrator orchestrator` is avail
 | --- | --- |
 | `name()` / `type()` | identity |
 | `latestValue()` | `Optional<T>` |
-| `latestValueOr(default)` | `T` |
-| `latestPublishNanos()` | `long`, `System.nanoTime()` clock |
+| `latestValueOr(default)` | `T`; allocation-free, prefer on hot paths |
+| `latestPublishNanos()` | `long`, `System.nanoTime()` clock, `0` before the first publish |
+| `latest()` | `Optional<Topic.Latest<T>>`; value and timestamp from one snapshot read |
+
+### `Topic.Latest<T>`
+
+The pair returned by `Topic.latest()`. Immutable.
+
+| Method | Returns |
+| --- | --- |
+| `value()` | `T` |
+| `publishNanos()` | `long`, `System.nanoTime()` clock |
+| `ageNanos()` | `long`, age of this value; no `0` sentinel handling |
 
 ### Subscription
 

@@ -78,6 +78,9 @@ class TopicLockFreeTest {
         // not evidence that the code is correct. What this test does establish is that no
         // reader ever observes a value outside the published range, and that the final
         // state is some publisher's last value.
+        // Timestamp and value from ONE snapshot read, so there is no window for a
+        // publish to land in between. This is the property the two-call accessors cannot
+        // offer, and the reason latest() exists.
         final int publishers = 4;
         final int perPublisher = 25_000;
         final int ids = publishers * perPublisher;
@@ -106,32 +109,38 @@ class TopicLockFreeTest {
         Thread reader = new Thread(() -> {
             try {
                 while (readersRunning.get()) {
-                    // Timestamp FIRST, then value. On this order a publish landing
-                    // between the two reads can only make the reported age too large,
-                    // never too small, so a staleness check can never pass a stale value.
-                    long ts = topic.latestPublishNanos();
-                    Integer v = topic.latestValueOr(null);
-                    if (v == null) {
-                        if (ts != 0L) {
-                            failure.compareAndSet(null, new AssertionError(
-                                    "timestamp recorded with no value: " + ts));
+                    // ONE snapshot read, so the value and the timestamp provably come
+                    // from the same publish. There is no window for a publish to land in,
+                    // so this cannot over-report age the way two calls can.
+                    Topic.Latest<Integer> snap = topic.latest().orElse(null);
+                    if (snap == null) {
+                        // Nothing published yet. There is deliberately no cross-check
+                        // against latestPublishNanos() here: a publish can land between
+                        // the two calls, so a nonzero stamp here would be that publish,
+                        // not an inconsistency.
+                    } else {
+                        Integer v = snap.value();
+                        if (v < 0 || v >= ids) {
+                            failure.compareAndSet(null,
+                                    new AssertionError("torn/garbage latest value: " + v));
                             return;
                         }
-                    } else if (v < 0 || v >= ids) {
-                        failure.compareAndSet(null,
-                                new AssertionError("torn/garbage latest value: " + v));
-                        return;
-                    } else {
-                        // Only a timestamp AFTER the window ends is a tear: the reader
-                        // would be holding an older value beside a newer timestamp. A
-                        // timestamp before the window is the safe, expected straddle --
-                        // the reader sampled the timestamp, a publish landed, then it read
-                        // the newer value.
+                        // The pair is self-consistent by construction, so the only way
+                        // to fail is a stamp that predates the value it came with --
+                        // which the publish-window check bounds.
                         long hi = windowHi.get(v);
-                        if (hi != Long.MIN_VALUE && ts > hi) {
+                        if (hi != Long.MIN_VALUE && snap.publishNanos() > hi) {
                             failure.compareAndSet(null, new AssertionError(
-                                    "value " + v + " is older than the timestamp " + ts
-                                            + " the reader sampled; its publish ended at " + hi));
+                                    "value " + v + " paired with stamp " + snap.publishNanos()
+                                            + " later than its publish end " + hi));
+                            return;
+                        }
+                        // ageNanos must agree with the stamp it was taken from. Zero is
+                        // legitimate (same clock tick); only negative is impossible.
+                        long age = snap.ageNanos();
+                        if (age < 0 || age > System.nanoTime() - snap.publishNanos()) {
+                            failure.compareAndSet(null, new AssertionError(
+                                    "implausible age " + age + " for stamp " + snap.publishNanos()));
                             return;
                         }
                     }
@@ -238,6 +247,56 @@ class TopicLockFreeTest {
 
         Topic<Integer> i = orchestrator.getOrCreateTopic("i", Integer.class);
         assertFalse(i.acceptsValueClass(double.class), "Double must not match Integer topic");
+    }
+
+    @Test
+    void latestReturnsValueAndTimestampFromOneConsistentPublish() throws Exception {
+        // latest() exists so a staleness check reads one snapshot instead of two. It must
+        // be empty before the first publish, agree with both single-field accessors, and
+        // never need a 0 sentinel.
+        Topic<String> t = orchestrator.getOrCreateTopic("snap", String.class);
+        assertFalse(t.latest().isPresent(), "latest() must be empty before the first publish");
+
+        orchestrator.publish("snap", "a");
+        Topic.Latest<String> first = t.latest().orElseThrow();
+        assertEquals("a", first.value());
+        assertEquals(first.publishNanos(), t.latestPublishNanos(),
+                "latest() and latestPublishNanos() must describe the same publish");
+        assertEquals("a", t.latestValueOr(null));
+        assertTrue(first.publishNanos() != 0L,
+                "a published stamp must not be the pre-publish 0 sentinel");
+
+        // ageNanos is the age of THIS value, computed from its own stamp. Taking a fresh
+        // clock reading afterwards must give an equal or LARGER delta, never a smaller
+        // one -- a smaller delta would mean the age came from somewhere other than this
+        // stamp, which is exactly the straddle latest() exists to prevent.
+        // age >= 0, not > 0: a snapshot read in the same clock tick as its own publish
+        // stamp legitimately reports age 0. Only a negative age is impossible here, and
+        // that is all this check needs to catch.
+        long age = first.ageNanos();
+        assertTrue(age >= 0 && age < 1_000_000_000L, "ageNanos out of range: " + age);
+        assertTrue(age <= System.nanoTime() - first.publishNanos(),
+                "ageNanos " + age + " exceeds a delta measured later from the same stamp");
+
+        // A later publish replaces both halves together; there is no observable state in
+        // which one half is from this publish and the other from the previous one.
+        //
+        // Wait for the clock to pass first.publishNanos() rather than sleeping a fixed
+        // interval: System.nanoTime() may return the same tick for adjacent reads, so
+        // Thread.sleep(2) does not guarantee the next publish gets a later stamp. Same
+        // bounded-wait pattern as latestValueAndTimestampAdvanceTogether, so a broken
+        // clock fails the assert instead of hanging.
+        long deadline = System.nanoTime() + 50_000_000L;
+        while (first.publishNanos() >= System.nanoTime() && System.nanoTime() <= deadline) {
+            Thread.sleep(1);
+        }
+        orchestrator.publish("snap", "b");
+        Topic.Latest<String> second = t.latest().orElseThrow();
+        assertEquals("b", second.value());
+        assertTrue(second.publishNanos() > first.publishNanos(),
+                "a later publish must carry a later stamp");
+        assertTrue(second.ageNanos() < first.ageNanos(),
+                "the newer value must report a younger age");
     }
 
     @Test

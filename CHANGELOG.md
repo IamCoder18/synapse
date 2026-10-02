@@ -26,12 +26,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `publish` is reachable from the OpMode loop, the hardware thread, and the callback
   pool, so two publishers really can overlap.
 
-  The write path still takes the topic monitor, but only around the clock sample and
-  the store. Two separate volatile fields would let two publishers interleave
-  between the value write and the timestamp write; sampling the clock outside
-  mutual exclusion would let a preempted publisher install an older pair after a
-  newer one. Both regressions were reproduced and fixed; keeping the monitor on the
-  write path preserves the ordering the previous `synchronized` body provided.
+  The write path still takes the topic monitor, but only around the clock sample,
+  one short-lived allocation and the store. Two separate volatile fields would let
+  two publishers interleave between the value write and the timestamp write;
+  sampling the clock outside mutual exclusion would let a preempted publisher
+  install an older pair after a newer one. Both regressions were reproduced and
+  fixed; keeping the monitor on the write path preserves the ordering the previous
+  `synchronized` body provided.
+
+  Each publish therefore allocates one small short-lived pair on the write path.
+  The read path is unchanged in allocation terms: `latestValueOr()` allocates
+  nothing.
 
   The topic's declared type is now normalized to its wrapper class **once**, at
   construction, for the per-publish type check. `type()` still reports the type the
@@ -39,15 +44,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
   `latestPublishNanos()` still returns `0` before the first publish, unchanged.
 
-  **Read the timestamp before the value** when you use the two together as a
-  staleness check. Each accessor now returns a self-consistent pair, but two separate
-  calls can still straddle a publish, so the ordering rule remains — it is now
-  documented on the public accessors and in the topics guide:
+  **Prefer `Topic.latest()` when you need both the value and its age.** It returns the
+  two from one snapshot read, so they provably come from the same publish:
 
   ```java
-  long stamp = topic.latestPublishNanos();  // first
+  Optional<Topic.Latest<T>> snap = topic.latest();
+  T v = snap.map(Topic.Latest::value).orElse(defaultValue);
+  long age = snap.map(Topic.Latest::ageNanos).orElse(Long.MAX_VALUE);
+  ```
+
+  `latestPublishNanos()` and `latestValueOr()` are unchanged and still correct. Composing
+  them takes two calls, which can straddle a publish and leave the pair describing two
+  different publishes; if you do compose them, **read the timestamp first**:
+
+  ```java
+  long stamp = topic.latestPublishNanos();  // first; 0 means nothing published yet
   T v = topic.latestValueOr(null);         // then
-  long age = System.nanoTime() - stamp;
+  long age = stamp == 0L ? Long.MAX_VALUE : System.nanoTime() - stamp;
   ```
 
   Reading the value first and the timestamp second can pair an older value with a
