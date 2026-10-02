@@ -201,6 +201,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # IMAGE is set through GITHUB_ENV by each build job's own prepare step, so it does
+      # not cross the job boundary. Without recomputing it here the manifest step sees an
+      # empty IMAGE and buildx rejects "@sha256:..." as an invalid reference, which is why
+      # the published multi-arch tag silently stopped updating.
+      - name: Prepare image name
+        env:
+          SOURCE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        run: |
+          echo "IMAGE=${SOURCE,,}" >> "$GITHUB_ENV"
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0

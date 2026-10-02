@@ -131,6 +131,26 @@ listeners registered, `publish` costs a single volatile read.
   stale. Reading the timestamp first can only over-report the age, never under-report
   it.
 
+### Fixed
+
+- **`unregisterNode` and `unsubscribe` now stop `@OnHardwareThread` subscribers.**
+  Routing a subscription to the hardware thread replaced the entry in the subscriber
+  list, but the subscription still reported the unwrapped handler, so removal searched
+  for something the list no longer held and silently did nothing. An unregistered node
+  kept receiving publishes — it could still drive hardware after being removed.
+- **`subscribe` works with primitive classes.** `int.class.isInstance(x)` is false for
+  every argument, so casting with the raw type made every delivery throw
+  `ClassCastException`, which was swallowed into a log line: the subscriber registered,
+  never fired, and nothing said why. Primitive and wrapper types are now treated
+  interchangeably here, as they already were on the publish path.
+- **Typed lookups no longer hand back a topic that cannot be cast to the requested
+  type.** An `Object` topic accepts a request for `String`, and the unchecked cast then
+  failed later at the caller's own line — after `isPresent()` had reported a value. The
+  request is now refused. `getOrCreateTopic` throws with a message naming the actual
+  type; `findTopic` and `getLatestValue` return empty. Narrowing to a type the
+  topic really holds still works, and `subscribeRaw` (used by the annotation binder)
+  still accepts an `Object` topic.
+
 ## [0.4.0] - 2026-09-12
 
 ### Changed
