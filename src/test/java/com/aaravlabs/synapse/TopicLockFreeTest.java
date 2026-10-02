@@ -263,18 +263,22 @@ class TopicLockFreeTest {
         assertEquals(first.publishNanos(), t.latestPublishNanos(),
                 "latest() and latestPublishNanos() must describe the same publish");
         assertEquals("a", t.latestValueOr(null));
-        assertTrue(first.publishNanos() != 0L,
-                "a published stamp must not be the pre-publish 0 sentinel");
+
+        // No assertion that publishNanos() is nonzero: System.nanoTime() has an arbitrary
+        // origin, so a published snapshot may legitimately carry 0. The present Optional
+        // already proves a publish happened, which is the property worth checking here.
 
         // ageNanos is the age of THIS value, computed from its own stamp. Taking a fresh
         // clock reading afterwards must give an equal or LARGER delta, never a smaller
         // one -- a smaller delta would mean the age came from somewhere other than this
         // stamp, which is exactly the straddle latest() exists to prevent.
-        // age >= 0, not > 0: a snapshot read in the same clock tick as its own publish
-        // stamp legitimately reports age 0. Only a negative age is impossible here, and
-        // that is all this check needs to catch.
+        //
+        // Both bounds are relative to the clock rather than absolute: a snapshot read in
+        // the same tick as its own publish legitimately reports age 0, and a GC pause
+        // between the publish and this read can legitimately make it arbitrarily large.
+        // Neither imposes a scheduling deadline on the test.
         long age = first.ageNanos();
-        assertTrue(age >= 0 && age < 1_000_000_000L, "ageNanos out of range: " + age);
+        assertTrue(age >= 0, "ageNanos must not be negative: " + age);
         assertTrue(age <= System.nanoTime() - first.publishNanos(),
                 "ageNanos " + age + " exceeds a delta measured later from the same stamp");
 

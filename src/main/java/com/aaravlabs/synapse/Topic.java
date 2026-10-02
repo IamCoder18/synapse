@@ -258,9 +258,10 @@ public final class Topic<T> {
      *
      * <p>Returns empty before the first publish.
      *
-     * <p><b>Allocates one small {@link Optional} wrapper per call.</b> If you only want
-     * the value and never check its age, use {@link #latestValueOr(Object)}, which is
-     * allocation-free.
+     * <p><b>Non-empty calls allocate one small {@link Optional} wrapper.</b> Calls before
+     * the first publish return the shared {@link Optional#empty()} instance and allocate
+     * nothing. If you only want the value and never check its age, use
+     * {@link #latestValueOr(Object)}, which never allocates.
      *
      * @return an {@link Optional} holding the latest value and its publish timestamp
      */
