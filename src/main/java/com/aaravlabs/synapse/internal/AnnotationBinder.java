@@ -118,21 +118,39 @@ public final class AnnotationBinder {
         boolean onHardware = m.isAnnotationPresent(OnHardwareThread.class);
 
         for (SubscribedTo sub : subs) {
-            Subscription s = orchestrator.subscribeRaw(sub.topic(), topicType, msg -> {
-                try {
-                    if (effectiveParam == null) {
+            Subscription s;
+            if (effectiveParam == null) {
+                // Trigger-style handler: ignores the value, so it attaches to
+                // whatever type the topic already has instead of demanding
+                // Object. Requesting Object via subscribeRaw threw
+                // IllegalArgumentException whenever the topic was pre-created
+                // with a narrower type (e.g. GamepadAdaptor's Boolean edge
+                // topics like 'g2/b/falling').
+                s = orchestrator.subscribeTrigger(sub.topic(), msg -> {
+                    try {
                         m.invoke(node);
-                    } else if (effectiveParam.isInstance(msg)) {
-                        m.invoke(node, msg);
+                    } catch (InvocationTargetException ite) {
+                        orchestrator.error("@SubscribedTo handler threw: " + m,
+                                ite.getCause() != null ? ite.getCause() : ite);
+                    } catch (Throwable t) {
+                        orchestrator.error("@SubscribedTo handler threw: " + m, t);
                     }
-                    // else: silently drop — message type didn't match the parameter.
-                } catch (InvocationTargetException ite) {
-                    orchestrator.error("@SubscribedTo handler threw: " + m,
-                            ite.getCause() != null ? ite.getCause() : ite);
-                } catch (Throwable t) {
-                    orchestrator.error("@SubscribedTo handler threw: " + m, t);
-                }
-            });
+                });
+            } else {
+                s = orchestrator.subscribeRaw(sub.topic(), topicType, msg -> {
+                    try {
+                        if (effectiveParam.isInstance(msg)) {
+                            m.invoke(node, msg);
+                        }
+                        // else: silently drop — message type didn't match the parameter.
+                    } catch (InvocationTargetException ite) {
+                        orchestrator.error("@SubscribedTo handler threw: " + m,
+                                ite.getCause() != null ? ite.getCause() : ite);
+                    } catch (Throwable t) {
+                        orchestrator.error("@SubscribedTo handler threw: " + m, t);
+                    }
+                });
+            }
             // If @OnHardwareThread is present, re-route this subscription's
             // handler to the hardware thread. We do this by wrapping the
             // subscription in a special wrapper that, when invoked, submits

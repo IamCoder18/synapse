@@ -381,6 +381,38 @@ public final class OrchestratorImpl implements Orchestrator {
         return new Subscription(topic, wrapped, this);
     }
 
+    /**
+     * Subscribe a trigger-style handler (a zero-parameter {@code @SubscribedTo}
+     * method) that ignores the published value.
+     *
+     * <p>Unlike {@link #subscribeRaw}, this never throws on a type mismatch: if
+     * the topic already exists with any type it attaches to that instance,
+     * otherwise it creates the topic as {@code Object}. A trigger handler
+     * accepts every value, so any topic type is compatible. Creating as
+     * {@code Object} when absent is safe for later typed use, since every type
+     * is a subtype of {@code Object} and re-creating from it always succeeds.
+     */
+    public Subscription subscribeTrigger(String topicName,
+                                         java.util.function.Consumer<Object> handler) {
+        Objects.requireNonNull(topicName, "topicName");
+        Objects.requireNonNull(handler, "handler");
+        Topic<?> topic = topics.get(topicName);
+        if (topic == null) {
+            Topic<Object> created = new Topic<>(topicName, Object.class);
+            Topic<?> prior = topics.putIfAbsent(topicName, created);
+            if (prior != null) {
+                topic = prior;
+            } else {
+                topic = created;
+                log.info(name, "created topic " + created);
+            }
+        }
+        MessageHandler wrapped = handler::accept;
+        SubscriberList list = subscribers.computeIfAbsent(topic, k -> new SubscriberList());
+        list.add(wrapped);
+        return new Subscription(topic, wrapped, this);
+    }
+
     void removeSubscription(Subscription sub) {
         Topic<?> t = sub.topic();
         SubscriberList list = subscribers.get(t);

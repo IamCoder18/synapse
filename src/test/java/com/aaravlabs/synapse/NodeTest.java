@@ -180,4 +180,82 @@ class NodeTest {
         assertTrue(n.seen.contains("1"));
         assertTrue(n.seen.contains("2"));
     }
+
+    @Test
+    void zeroArgHandlerSurvivesPrecreatedTypedTopic() throws Exception {
+        // Regression: a zero-parameter @SubscribedTo on a topic the adaptor
+        // pre-created as Boolean (e.g. 'g2/b/falling') used to throw
+        // IllegalArgumentException ("already exists with type Boolean, cannot
+        // re-create as Object") at registerNode. Trigger handlers ignore the
+        // value, so they must attach to whatever type already exists.
+        orchestrator.getOrCreateTopic("g2/b/falling", Boolean.class);
+
+        class N extends Node {
+            final AtomicInteger fires = new AtomicInteger();
+            N(Orchestrator o) { super(o); }
+            @SubscribedTo(topic = "g2/b/falling")
+            public void onFalling() { fires.incrementAndGet(); }
+        }
+
+        N n = new N(orchestrator);
+        orchestrator.registerNode("trigger", n);
+
+        orchestrator.publish("g2/b/falling", true);
+        for (int i = 0; i < 50 && n.fires.get() == 0; i++) Thread.sleep(10);
+        assertEquals(1, n.fires.get(), "zero-arg handler should fire on Boolean publish");
+    }
+
+    @Test
+    void typedAndZeroArgHandlersShareOneTopic() throws Exception {
+        // Both directions of the same scenario: a typed handler and a trigger
+        // handler on one pre-created topic must both bind and both fire.
+        orchestrator.getOrCreateTopic("g2/b/falling", Boolean.class);
+
+        class N extends Node {
+            final AtomicInteger typed = new AtomicInteger();
+            final AtomicInteger trigger = new AtomicInteger();
+            N(Orchestrator o) { super(o); }
+            @SubscribedTo(topic = "g2/b/falling")
+            public void onTyped(Boolean v) { typed.incrementAndGet(); }
+            @SubscribedTo(topic = "g2/b/falling")
+            public void onTrigger() { trigger.incrementAndGet(); }
+        }
+
+        N n = new N(orchestrator);
+        orchestrator.registerNode("both", n);
+
+        orchestrator.publish("g2/b/falling", true);
+        for (int i = 0; i < 50 && (n.typed.get() == 0 || n.trigger.get() == 0); i++) Thread.sleep(10);
+        assertEquals(1, n.typed.get());
+        assertEquals(1, n.trigger.get());
+    }
+
+    @Test
+    void zeroArgHandlerFirstDoesNotPoisonTopicForLaterTypedUse() throws Exception {
+        // Trigger-first ordering creates the topic as Object; a later typed
+        // subscriber and typed publishes must still work, since every type is
+        // a subtype of Object.
+        class T extends Node {
+            final AtomicInteger fires = new AtomicInteger();
+            T(Orchestrator o) { super(o); }
+            @SubscribedTo(topic = "edge/falling")
+            public void onTrigger() { fires.incrementAndGet(); }
+        }
+        class N extends Node {
+            final List<Boolean> seen = new CopyOnWriteArrayList<>();
+            N(Orchestrator o) { super(o); }
+            @SubscribedTo(topic = "edge/falling")
+            public void onTyped(Boolean v) { seen.add(v); }
+        }
+
+        T t = new T(orchestrator);
+        N n = new N(orchestrator);
+        orchestrator.registerNode("trigger", t);
+        orchestrator.registerNode("typed", n);
+
+        orchestrator.publish("edge/falling", true);
+        for (int i = 0; i < 50 && (t.fires.get() == 0 || n.seen.isEmpty()); i++) Thread.sleep(10);
+        assertEquals(1, t.fires.get());
+        assertEquals(List.of(true), n.seen);
+    }
 }
