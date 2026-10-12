@@ -9,7 +9,7 @@ ghcr.io/iamcoder18/synapse-website
 Tags:
 
 - `:latest` — updated on every merge to `main`
-- `:0.4.0`, `0.4`, `0`, … — updated on every `v*` Git tag (synced with the Maven/Java package version)
+- `:0.4.1`, `0.4`, `0`, … — updated on every `v*` Git tag (synced with the Maven/Java package version)
 - `:<sha>` — every commit, for reproducibility
 
 ## Run with docker compose
@@ -25,7 +25,7 @@ open  http://localhost:8080/
 Pin a version:
 
 ```bash
-SYNAPSE_SITE_IMAGE=ghcr.io/iamcoder18/synapse-website:0.4.0 \
+SYNAPSE_SITE_IMAGE=ghcr.io/iamcoder18/synapse-website:0.4.1 \
   docker compose up -d
 ```
 

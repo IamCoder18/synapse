@@ -2,7 +2,7 @@
 # Registry from this repo's main branch and tags — see
 # .github/workflows/docker.yml. Pull a specific tag in production:
 #
-#   SYNAPSE_SITE_IMAGE=ghcr.io/iamcoder18/synapse-website:0.4.0 \
+#   SYNAPSE_SITE_IMAGE=ghcr.io/iamcoder18/synapse-website:0.4.1 \
 #     docker compose up -d
 #
 # Override `SYNAPSE_SITE_IMAGE` to pin a tag; omit it for `:latest`.

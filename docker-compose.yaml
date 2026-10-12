@@ -9,7 +9,7 @@
 #
 # Pin a specific version:
 #
-#   SYNAPSE_SITE_IMAGE=ghcr.io/iamcoder18/synapse-website:0.4.0 \
+#   SYNAPSE_SITE_IMAGE=ghcr.io/iamcoder18/synapse-website:0.4.1 \
 #     docker compose up -d
 #
 # Verify:

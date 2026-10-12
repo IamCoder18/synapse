@@ -5,11 +5,11 @@ description: Add Synapse to your FTC Gradle project — one dependency, no token
 
 # Install
 
-Synapse is distributed as a Maven artifact, `com.aaravlabs:synapse:0.4.0`, published to **Maven Central**. Maven Central needs no authentication — if your project already has `mavenCentral()` in its repositories (the FTC template does), you can add the dependency and you're done:
+Synapse is distributed as a Maven artifact, `com.aaravlabs:synapse:0.4.1`, published to **Maven Central**. Maven Central needs no authentication — if your project already has `mavenCentral()` in its repositories (the FTC template does), you can add the dependency and you're done:
 
 ```groovy
 dependencies {
-    implementation 'com.aaravlabs:synapse:0.4.0'
+    implementation 'com.aaravlabs:synapse:0.4.1'
 }
 ```
 
@@ -31,7 +31,7 @@ Open `build.dependencies.gradle` in your FTC project and add the dependency:
 
 ```groovy
 dependencies {
-    implementation 'com.aaravlabs:synapse:0.4.0'
+    implementation 'com.aaravlabs:synapse:0.4.1'
     // ... your other FTC deps
 }
 ```
@@ -42,7 +42,7 @@ dependencies {
 >
 > ```kotlin
 > dependencies {
->     implementation("com.aaravlabs:synapse:0.4.0")
+>     implementation("com.aaravlabs:synapse:0.4.1")
 > }
 > ```
 
@@ -54,7 +54,7 @@ Sync Gradle (the `Sync Now` banner, or the Gradle elephant in Android Studio), t
 ./gradlew dependencies --configuration debugRuntimeClasspath | grep synapse
 ```
 
-You should see `com.aaravlabs:synapse:0.4.0` in the output.
+You should see `com.aaravlabs:synapse:0.4.1` in the output.
 
 > **Sync fails with "Could not resolve com.aaravlabs:synapse"?**
 > Make sure the dependency is in the project-level `dependencies {}` of `build.dependencies.gradle` (not `buildscript`), and that `mavenCentral()` is present in that file's `repositories {}`.
@@ -112,7 +112,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.aaravlabs:synapse:0.4.0'
+    implementation 'com.aaravlabs:synapse:0.4.1'
 }
 ```
 
@@ -135,7 +135,7 @@ repositories {
 }
 
 dependencies {
-    implementation("com.aaravlabs:synapse:0.4.0")
+    implementation("com.aaravlabs:synapse:0.4.1")
 }
 ```
 
@@ -149,7 +149,7 @@ Sync Gradle, then confirm the JAR landed:
 ./gradlew dependencies --configuration debugRuntimeClasspath | grep synapse
 ```
 
-You should see `com.aaravlabs:synapse:0.4.0` in the output.
+You should see `com.aaravlabs:synapse:0.4.1` in the output.
 
 > **Sync fails with 401 Unauthorized?**
 > 1. Check that `githubUser` and `githubToken` are spelled exactly like that in `~/.gradle/gradle.properties`.

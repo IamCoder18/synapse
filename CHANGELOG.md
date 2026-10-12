@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-12
+
+### Fixed
+
+- **Zero-parameter `@SubscribedTo` methods no longer throw
+  `IllegalArgumentException` when the topic was pre-created with a narrower
+  type.** The binder used to request the topic as `Object` for trigger-style
+  handlers, so registering one on e.g. `GamepadAdaptor`'s `Boolean` edge
+  topics (`g2/b/falling`) failed at `registerNode` with "already exists with
+  type java.lang.Boolean, cannot re-create as java.lang.Object". Trigger
+  handlers ignore the published value, so they now attach via the new
+  `OrchestratorImpl.subscribeTrigger`, which reuses the existing topic's type
+  and only creates the topic as `Object` when it is absent (safe for later
+  typed use, since every type is a subtype of `Object`). Typed handlers keep
+  the previous `subscribeRaw` path, including the silent-drop guard and
+  `@OnHardwareThread` rerouting. Regression tests cover trigger-on-typed-topic,
+  typed-plus-trigger sharing one topic, and trigger-first ordering.
+
 ### Added
 
 - `PublishListener`: a pluggable hook notified synchronously on every
@@ -218,7 +236,8 @@ listeners registered, `publish` costs a single volatile read.
   loops, two-pool isolation, hardware-thread serial execution, soak tests,
   race conditions, and the real-FTC-SDK `Gamepad` field set.
 
-[Unreleased]: https://github.com/IamCoder18/synapse/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/IamCoder18/synapse/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/IamCoder18/synapse/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/IamCoder18/synapse/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/IamCoder18/synapse/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/IamCoder18/synapse/compare/v0.2.1...v0.3.0

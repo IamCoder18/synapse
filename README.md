@@ -269,7 +269,7 @@ in its repositories, so adding the dependency is all it takes:
 
 ```gradle
 dependencies {
-    implementation 'com.aaravlabs:synapse:0.4.0'
+    implementation 'com.aaravlabs:synapse:0.4.1'
     // ... your other FTC deps
 }
 ```
@@ -298,7 +298,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.aaravlabs:synapse:0.4.0'
+    implementation 'com.aaravlabs:synapse:0.4.1'
     // ... your other FTC deps
 }
 ```
