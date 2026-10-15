@@ -4,6 +4,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -86,6 +88,11 @@ class TopicLockFreeTest {
         final int ids = publishers * perPublisher;
         AtomicReference<Throwable> failure = new AtomicReference<>();
         AtomicReference<Boolean> readersRunning = new AtomicReference<>(Boolean.TRUE);
+        // Counted, and asserted non-zero below. Without this the whole reader loop can be
+        // skipped forever: make latest() return empty and snap is always null, so no
+        // assertion inside the loop ever runs and the test still passes on its final-state
+        // checks. A detector that cannot be observed to have fired is not evidence.
+        AtomicLong samplesWithValue = new AtomicLong();
         AtomicLongArray windowHi = new AtomicLongArray(ids);
         for (int i = 0; i < ids; i++) {
             // Long.MIN_VALUE, not -1: the JLS allows any origin for System.nanoTime(),
@@ -119,15 +126,15 @@ class TopicLockFreeTest {
                         // the two calls, so a nonzero stamp here would be that publish,
                         // not an inconsistency.
                     } else {
+                        samplesWithValue.incrementAndGet();
                         Integer v = snap.value();
                         if (v < 0 || v >= ids) {
                             failure.compareAndSet(null,
                                     new AssertionError("torn/garbage latest value: " + v));
                             return;
                         }
-                        // The pair is self-consistent by construction, so the only way
-                        // to fail is a stamp that predates the value it came with --
-                        // which the publish-window check bounds.
+                        // Only a stamp AFTER the publish ended indicates a torn pair: the
+                        // reader would be holding an older value beside a newer timestamp.
                         long hi = windowHi.get(v);
                         if (hi != Long.MIN_VALUE && snap.publishNanos() > hi) {
                             failure.compareAndSet(null, new AssertionError(
@@ -167,8 +174,8 @@ class TopicLockFreeTest {
                     for (int i = 0; i < perPublisher; i++) {
                         orchestrator.publish("concurrent", base + i);
                         // Recorded after the publish returns. Recording it before would
-                        // make the detector blind: a reader would essentially never see a
-                        // value whose window had closed.
+                        // make the tear detector blind: a reader would essentially never
+                        // see a value whose window had closed.
                         windowHi.set(base + i, System.nanoTime());
                     }
                 } catch (Throwable t) {
@@ -192,6 +199,10 @@ class TopicLockFreeTest {
             }
 
             assertNull(failure.get(), "concurrent access failed: " + failure.get());
+            // The reader must actually have observed the topic. If it saw nothing, every
+            // check above was vacuously skipped and this green run means nothing.
+            assertTrue(samplesWithValue.get() > 0,
+                    "the reader never observed a value, so the tear checks never ran");
             // Concurrent publishers each write a contiguous ascending block, so which
             // publisher's final write lands last is non-deterministic. The invariant is
             // that the surviving value is some publisher's last value, not that it is the
@@ -212,6 +223,29 @@ class TopicLockFreeTest {
             }
         }
     }
+
+    /*
+ * NOT a test: a record of why there is no test for the install-ordering guarantee.
+ *
+ * recordLatest holds the topic monitor across the clock sample and the store, so
+ * install order equals timestamp order. Without it, a publisher that samples the clock
+ * and is then preempted installs an OLDER snapshot after a newer one, and the visible
+ * stamp moves backwards. That regression was reproduced against the real class by a
+ * standalone probe, but it is not covered here, and this is the reasoning:
+ *
+ *  - The window between sampling and storing is nanoseconds wide in the steady state.
+ *    Sampling `now` immediately before the store and asserting install order directly
+ *    would test the test, not the code.
+ *  - Detecting it by observation needs a reader tight enough to land inside that
+ *    window. A spinning reader detects it 3 runs in 6, but starves the publishers on a
+ *    1-2 core runner and made the suite hang. A yielding reader never detects it at all,
+ *    because it samples orders of magnitude too slowly.
+ *  - So every arrangement either flakes, hangs, or cannot fire. A test that cannot fail
+ *    reliably is worse than no test: it reports coverage it does not have.
+ *
+ * The guarantee rests on the monitor in recordLatest plus the reasoning above, not on
+ * an assertion. If that ever changes, this is the gap.
+ */
 
     @Test
     void acceptsValueClassRejectsIncompatibleValues() {
@@ -245,11 +279,13 @@ class TopicLockFreeTest {
         assertTrue(t.acceptsValueClass(Double.class));
         assertTrue(t.acceptsValueClass(double.class), "primitive must match wrapper topic");
         assertTrue(t.acceptsType(double.class));
-        // acceptsValueClass delegates to acceptsType, so the pair cannot disagree.
-        for (Class<?> c : new Class<?>[]{Double.class, double.class, Number.class, Object.class}) {
-            assertEquals(t.acceptsType(c), t.acceptsValueClass(c),
-                    "acceptsValueClass must agree with acceptsType for " + c.getSimpleName());
-        }
+        // Literal expectations, not a comparison of acceptsValueClass against acceptsType:
+        // acceptsValueClass delegates to acceptsType, so asserting they agree restates the
+        // delegation rather than testing a truth value. These pin the actual semantics.
+        assertFalse(t.acceptsValueClass(Number.class),
+                "a supertype of the topic type must not be accepted as a publish type");
+        assertFalse(t.acceptsValueClass(Object.class),
+                "Object must not be accepted for a Double topic");
 
         Topic<Integer> i = orchestrator.getOrCreateTopic("i", Integer.class);
         assertFalse(i.acceptsValueClass(double.class), "Double must not match Integer topic");
@@ -263,33 +299,48 @@ class TopicLockFreeTest {
         Topic<String> t = orchestrator.getOrCreateTopic("snap", String.class);
         assertFalse(t.latest().isPresent(), "latest() must be empty before the first publish");
 
+        // Clock readings taken OUTSIDE the library, around the publish. These are the only
+        // independent reference for the stamp: comparing latest().publishNanos() with
+        // latestPublishNanos() reads the same volatile field twice and holds for any value,
+        // and an age bracket is offset-invariant -- a Latest stamped with publishNanos + K
+        // shifts the age and both bounds by K and still passes. A wrong-but-consistent
+        // timestamp is exactly the staleness failure latest() exists to prevent, so the
+        // stamp has to be pinned against a clock the library did not touch.
+        long publishBefore = System.nanoTime();
         orchestrator.publish("snap", "a");
+        long publishAfter = System.nanoTime();
+
         Topic.Latest<String> first = t.latest().orElseThrow();
         assertEquals("a", first.value());
-        assertEquals(first.publishNanos(), t.latestPublishNanos(),
-                "latest() and latestPublishNanos() must describe the same publish");
         assertEquals("a", t.latestValueOr(null));
+        // Compare the SNAPSHOT identity, not the stamp. latest() and latestPublishNanos()
+        // both read the same volatile field, so comparing their stamps holds for any value
+        // an implementation could produce and would catch nothing. latestPublishNanos() is
+        // pinned to an externally-clocked window below instead.
 
-        // No assertion that publishNanos() is nonzero: System.nanoTime() has an arbitrary
-        // origin, so a published snapshot may legitimately carry 0. The present Optional
-        // already proves a publish happened, which is the property worth checking here.
+        // The stamp must fall inside the window this publish occupied, which no
+        // self-consistent offset can satisfy. Pinned for both accessors, since neither
+        // reading is derived from the other.
+        assertTrue(first.publishNanos() >= publishBefore
+                        && first.publishNanos() <= publishAfter,
+                "publish stamp " + first.publishNanos() + " lies outside the publish window ["
+                        + publishBefore + "," + publishAfter + "]");
+        long recorded = t.latestPublishNanos();
+        assertTrue(recorded >= publishBefore && recorded <= publishAfter,
+                "latestPublishNanos() " + recorded + " must be the stamp of this publish,"
+                        + " not a live clock reading, which would be outside ["
+                        + publishBefore + "," + publishAfter + "]");
 
-        // ageNanos must be the age of THIS value, from ITS OWN stamp.
-        //
-        // Comparing ageNanos() against `now - publishNanos()` cannot establish that:
-        // both sides recompute the same subtraction, so the relation holds for any pair
-        // and a Latest carrying a foreign stamp still passes. What actually pins the
-        // stamp to this value is the cross-check above -- latest().publishNanos() equals
-        // latestPublishNanos() equals the stamp of the "a" publish -- combined with a
-        // non-negative age and a stamp that is not in the future.
-        //
-        // Both bounds are relative to the clock, not absolute wall-clock deadlines: a
-        // snapshot read in the same tick as its own publish legitimately reports age 0,
-        // and a GC pause between the publish and this read can legitimately make the
-        // age arbitrarily large.
-        // The clock reads must bracket the ageNanos() call itself; a reading taken
-        // outside it cannot bound the result in either direction, because a pause
-        // between the reading and the call would break the relation.
+        // No assertion that the stamp is nonzero: System.nanoTime() has an arbitrary
+        // origin, so a published snapshot may legitimately carry 0.
+
+        // ageNanos must be the age of THIS value, from ITS OWN stamp. The clock reads
+        // bracket the call itself -- a reading sampled outside it cannot bound the result
+        // in either direction, because a pause between the reading and the call would
+        // break the relation. Both bounds are relative to the clock rather than absolute
+        // wall-clock deadlines: a snapshot read in the same tick as its own publish
+        // legitimately reports age 0, and a GC pause between the publish and this read can
+        // legitimately make the age arbitrarily large.
         long ageBefore = System.nanoTime();
         long age = first.ageNanos();
         long ageAfter = System.nanoTime();
@@ -316,13 +367,21 @@ class TopicLockFreeTest {
         assertEquals("b", second.value());
         assertTrue(second.publishNanos() > first.publishNanos(),
                 "a later publish must carry a later stamp");
-        // Derive both ages from ONE clock reading rather than calling ageNanos() twice.
-        // Sampled at different moments the comparison depends on how long each call took,
-        // so a pause between the publish and the second read could make the newer value
-        // look older. From a single now, a strictly later stamp is a strictly smaller age.
-        long laterNow = System.nanoTime();
-        assertTrue(laterNow - second.publishNanos() < laterNow - first.publishNanos(),
-                "the newer value must report a younger age");
+        // Actually call ageNanos() on both snapshots -- deriving both from one clock reading
+        // would reduce to a restatement of the strictly-later-stamp assertion above and
+        // would never exercise ageNanos at all. The two calls sample the clock separately,
+        // so the elapsed span between them is measured and allowed for: that span is the
+        // sampling skew, and only skew of that size could let the newer value report the
+        // older age. Clock readings either side keep the allowance honest rather than
+        // granting an unbounded tolerance.
+        long skewBefore = System.nanoTime();
+        long secondAge = second.ageNanos();
+        long firstAge = first.ageNanos();
+        long skewAfter = System.nanoTime();
+        long maxSkew = skewAfter - skewBefore;
+        assertTrue(secondAge <= firstAge + maxSkew,
+                "the newer value must not report an older age than the one it replaced: "
+                        + secondAge + " vs " + firstAge + " (clock skew allowance " + maxSkew + ")");
     }
 
     @Test
