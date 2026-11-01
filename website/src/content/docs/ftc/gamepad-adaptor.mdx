@@ -68,6 +68,42 @@ GamepadAdaptor.attach(orchestrator, gamepad2, "g2");
 
 Each adaptor is independent; the parent prefix keeps their topics apart. See the [two-controller recipe](/docs/recipes/two-controller-teleop) for the robot-validated driver/operator split.
 
+## SafeOpMode defaults
+
+When you extend [`SafeOpMode`](/docs/ftc/safe-opmode), gamepad publishing defaults depend on the OpMode type:
+
+| OpMode annotation | `publishGamepads` default | Behavior |
+|---|---|---|
+| `@TeleOp` | `true` | Gamepad adaptors attach automatically via `attachGamepad` |
+| `@Autonomous` / none | `false` | Gamepads are **not** published — opt in by setting `publishGamepads = true` |
+
+Use [`SafeOpMode#attachGamepad(Object, String)`](/docs/ftc/safe-opmode) instead of calling `GamepadAdaptor.attach` directly so the default is respected:
+
+```java
+@TeleOp(name = "Main TeleOp")
+public class MainTeleOp extends SafeOpMode {
+    @Override protected void onSafeInit() {
+        // publishGamepads defaults to true for @TeleOp.
+        attachGamepad(gamepad1, "g1");
+        attachGamepad(gamepad2, "g2");
+    }
+}
+```
+
+```java
+@Autonomous(name = "Red Alliance Auto")
+public class RedAuto extends SafeOpMode {
+    @Override protected void onSafeInit() {
+        // publishGamepads defaults to false for Autonomous.
+        attachGamepad(gamepad1, "g1");          // no-op: not published
+        publishGamepads = true;                  // opt in
+        attachGamepad(gamepad1, "g1");           // now attached
+    }
+}
+```
+
+To opt out of gamepad publishing in a `@TeleOp` OpMode, set `publishGamepads = false` in `onSafeInit()` before calling `attachGamepad`.
+
 ## Next steps
 
 - [Mecanum drive](/docs/recipes/mecanum-drive) — gamepad topics driving a real drivetrain.
