@@ -1,10 +1,12 @@
 package com.aaravlabs.synapse.ftc;
 
-import com.aaravlabs.synapse.Orchestrator;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
+import com.qualcomm.robotcore.hardware.Gamepad;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -48,24 +50,23 @@ class SafeOpModeTest {
         }
     }
 
-    private Orchestrator orchestrator;
-
-    @BeforeEach
-    void setUp() {
-        orchestrator = FtcOrchestrator.create();
-    }
+    /** Tracks every OpMode initialized by a test so its orchestrator is closed. */
+    private final List<SafeOpMode> initialized = new ArrayList<>();
 
     @AfterEach
     void tearDown() {
-        if (orchestrator != null) {
-            orchestrator.close();
+        for (SafeOpMode op : initialized) {
+            op.stop();
         }
+        initialized.clear();
     }
 
     @Test
     void teleOpDefaultsPublishGamepadsTrue() {
         SafeOpMode op = new TeleOpDefault();
+        op.gamepad1 = new Gamepad();
         op.init();
+        initialized.add(op);
         assertTrue(op.publishGamepads,
                 "@TeleOp opmode should default publishGamepads to true");
         assertNotNull(op.orchestrator, "orchestrator should be initialized");
@@ -74,7 +75,9 @@ class SafeOpModeTest {
     @Test
     void autoDefaultsPublishGamepadsFalse() {
         SafeOpMode op = new AutoDefault();
+        op.gamepad1 = new Gamepad();
         op.init();
+        initialized.add(op);
         assertFalse(op.publishGamepads,
                 "Autonomous opmode should default publishGamepads to false");
     }
@@ -82,38 +85,46 @@ class SafeOpModeTest {
     @Test
     void teleOpAttachesGamepadAdaptorByDefault() {
         SafeOpMode op = new TeleOpDefault();
+        op.gamepad1 = new Gamepad();
         op.init();
+        initialized.add(op);
         assertTrue(op.publishGamepads);
-        assertNotNull(op.orchestrator.findTopic("g1/a", Boolean.class),
+        assertTrue(op.orchestrator.findTopic("g1/a", Boolean.class).isPresent(),
                 "gamepad topics should be created for @TeleOp by default");
     }
 
     @Test
     void autoDoesNotAttachGamepadAdaptorByDefault() {
         SafeOpMode op = new AutoDefault();
+        op.gamepad1 = new Gamepad();
         op.init();
+        initialized.add(op);
         assertFalse(op.publishGamepads);
-        assertNull(op.orchestrator.findTopic("g1/a", Boolean.class).orElse(null),
+        assertFalse(op.orchestrator.findTopic("g1/a", Boolean.class).isPresent(),
                 "no gamepad topics should be created for Auto by default");
     }
 
     @Test
     void teleOpOptOutDisablesGamepadPublishing() {
         SafeOpMode op = new TeleOpOptOut();
+        op.gamepad1 = new Gamepad();
         op.init();
+        initialized.add(op);
         assertFalse(op.publishGamepads,
                 "TeleOp with publishGamepads=false should not publish gamepads");
-        assertNull(op.orchestrator.findTopic("g1/a", Boolean.class).orElse(null),
+        assertFalse(op.orchestrator.findTopic("g1/a", Boolean.class).isPresent(),
                 "no gamepad topics should be created when opted out");
     }
 
     @Test
     void autoOptInEnablesGamepadPublishing() {
         SafeOpMode op = new AutoOptIn();
+        op.gamepad1 = new Gamepad();
         op.init();
+        initialized.add(op);
         assertTrue(op.publishGamepads,
                 "Auto opmode with publishGamepads=true should publish gamepads");
-        assertNotNull(op.orchestrator.findTopic("g1/a", Boolean.class),
+        assertTrue(op.orchestrator.findTopic("g1/a", Boolean.class).isPresent(),
                 "gamepad topics should be created when opted in");
     }
 }

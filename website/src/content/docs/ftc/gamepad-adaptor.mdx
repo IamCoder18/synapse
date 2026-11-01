@@ -74,10 +74,10 @@ When you extend [`SafeOpMode`](/docs/ftc/safe-opmode), gamepad publishing defaul
 
 | OpMode annotation | `publishGamepads` default | Behavior |
 |---|---|---|
-| `@TeleOp` | `true` | Gamepad adaptors attach automatically via `attachGamepad` |
-| `@Autonomous` / none | `false` | Gamepads are **not** published — opt in by setting `publishGamepads = true` |
+| `@TeleOp` | `true` | `attachGamepad()` will attach a `GamepadAdaptor` when called; the default does **not** attach anything by itself |
+| `@Autonomous` / none | `false` | `attachGamepad()` is a no-op unless `publishGamepads = true` is set first |
 
-Use [`SafeOpMode#attachGamepad(Object, String)`](/docs/ftc/safe-opmode) instead of calling `GamepadAdaptor.attach` directly so the default is respected:
+These defaults only take effect when you use [`SafeOpMode#attachGamepad(Object, String)`](/docs/ftc/safe-opmode). Direct `GamepadAdaptor.attach(...)` calls are unaffected and always register an adaptor regardless of OpMode type.
 
 ```java
 @TeleOp(name = "Main TeleOp")

@@ -127,7 +127,7 @@ public class MainTeleOp extends SafeOpMode {
         backLeft = safeMap.device(DcMotorEx.class, "backLeft");
         backRight = safeMap.device(DcMotorEx.class, "backRight");
 
-        GamepadAdaptor.attach(orchestrator, gamepad1, "g1");
+        attachGamepad(gamepad1, "g1");
 
         orchestrator.registerNode("drive",
                 new Drive(orchestrator, frontLeft, frontRight, backLeft, backRight));
@@ -213,6 +213,7 @@ com.aaravlabs.synapse.annotation
 
 com.aaravlabs.synapse.ftc
   SafeOpMode         orchestrator / hardware / safeMap + 5 hooks
+                      publishGamepads / attachGamepad(gamepad, "g1")
   FtcOrchestrator    create() / create(sink)
   HardwareActions    run / call / call(+timeout) / callAsync
                      bulkRead / stopBulkRead / isHardwareThread
