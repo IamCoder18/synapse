@@ -46,13 +46,15 @@ Plus the OpMode thread itself, which runs the lifecycle. The full map:
 
 | OpMode method | Your hook | What you do there |
 | --- | --- | --- |
-| `init()` | `onSafeInit()` (required) | create `SafeDevice`s, register nodes, attach `GamepadAdaptor`s |
+| `init()` | `onSafeInit()` (required) | create `SafeDevice`s, register nodes, attach `GamepadAdaptor`s via `attachGamepad()` |
 | `init_loop()` | `onSafeInitLoop()` | rarely used |
 | `start()` | `onSafeStart()` | one-shot start logic |
 | `loop()` | `onSafeLoop()` | telemetry from topics only |
 | `stop()` | `onSafeStop()` (before close) | flush telemetry; orchestrator closes right after |
 
 Every thread is a daemon named `synapse-<name>-<n>`; the hardware thread is `synapse-ftc-hw-1` — filter Logcat by thread name when something hangs.
+
+**Gamepad publishing defaults.** `SafeOpMode.init()` sets `publishGamepads` to `true` for `@TeleOp` OpModes and `false` for Autonomous/other. Use `attachGamepad(gamepad, "g1")` instead of calling `GamepadAdaptor.attach` directly so the default is respected. Set `publishGamepads = true` in `onSafeInit()` to opt in (auto), or `publishGamepads = false` to opt out (teleop).
 
 **Publishing flow:** `publish()` updates the topic's latest-value cache *synchronously on the caller's thread*, then enqueues subscriber callbacks onto the callback pool (or the hardware thread for `@OnHardwareThread` subscribers). Publishing is always non-blocking — even from the hardware thread.
 
@@ -125,7 +127,7 @@ public class MainTeleOp extends SafeOpMode {
         backLeft = safeMap.device(DcMotorEx.class, "backLeft");
         backRight = safeMap.device(DcMotorEx.class, "backRight");
 
-        GamepadAdaptor.attach(orchestrator, gamepad1, "g1");
+        attachGamepad(gamepad1, "g1");
 
         orchestrator.registerNode("drive",
                 new Drive(orchestrator, frontLeft, frontRight, backLeft, backRight));
@@ -211,6 +213,7 @@ com.aaravlabs.synapse.annotation
 
 com.aaravlabs.synapse.ftc
   SafeOpMode         orchestrator / hardware / safeMap + 5 hooks
+                      publishGamepads / attachGamepad(gamepad, "g1")
   FtcOrchestrator    create() / create(sink)
   HardwareActions    run / call / call(+timeout) / callAsync
                      bulkRead / stopBulkRead / isHardwareThread

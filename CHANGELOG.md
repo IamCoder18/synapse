@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`SafeOpMode.attachGamepad(Object, String)`** — attaches a `GamepadAdaptor`
+  only when `publishGamepads` is true, so the auto/teleop default is respected.
+  Returns the registered node name or `null` when gamepad publishing is
+  disabled for this OpMode.
+
+### Changed
+
+- **`SafeOpMode` defaults gamepad publishing by OpMode type.** `init()` now sets
+  `publishGamepads` to `true` for `@TeleOp` OpModes and `false` for
+  Autonomous/other OpModes. Gamepads are opt-in for auto OpModes and can be
+  optionally disabled in teleop by setting `publishGamepads = false` in
+  `onSafeInit()`. Direct `GamepadAdaptor.attach(...)` calls are unaffected.
+
 ## [0.4.1] - 2026-10-12
 
 ### Fixed
