@@ -1,6 +1,6 @@
 ---
 name: synapse-pubsub-ftc
-description: Builds FIRST Tech Challenge (FTC) robot code on the Synapse annotation-driven pub/sub bus. ALWAYS use this skill for any FTC coding task — new OpModes, TeleOp or autonomous, subsystems, gamepad handling, sensors, refactoring raw OpModes, debugging races or hangs, or anything mentioning Synapse, @SubscribedTo, @RunPeriodically, @RunnableAction, @OnHardwareThread, SafeOpMode, HardwareActions, SafeDevice, SafeHardwareMap, GamepadAdaptor, or the Synapse orchestrator. For non-FTC code (FRC, generic Java, web, etc.) do not use this skill.
+description: Builds FIRST Tech Challenge (FTC) robot code on the Synapse annotation-driven pub/sub bus. ALWAYS use this skill for any FTC coding task — new OpModes, TeleOp or autonomous, subsystems, gamepad handling, sensors, refactoring raw OpModes, debugging races or hangs, or anything mentioning Synapse, @SubscribedTo, @RunPeriodically, @RunnableAction, @OnHardwareThread, SafeOpMode, HardwareActions, SafeDevice, SafeHardwareMap, GamepadAdaptor, HardwareGate, restrict/release, or the Synapse orchestrator. For non-FTC code (FRC, generic Java, web, etc.) do not use this skill.
 ---
 
 # Synapse on FTC
@@ -11,9 +11,9 @@ The skill is mostly about **knowing which thread a piece of code will run on, an
 
 ---
 
-## The 8 rules. Read these first.
+## The 9 rules. Read these first.
 
-1. **All hardware access happens on the hardware thread. Nothing else.** Route it one of three ways: `@OnHardwareThread` on a `@SubscribedTo` method, `@RunPeriodically(hz = N, hardware = true)`, or `HardwareActions`/`SafeDevice` (`run`/`call`/`callAsync`) from anywhere else. A raw `motor.setPower(...)` anywhere else is a bug — fix it before anything else.
+1. **All hardware access happens on the hardware thread. Nothing else.** Route it one of three ways: `@OnHardwareThread` on a `@SubscribedTo` method, `@RunPeriodically(hz = N, hardware = true)`, or `HardwareActions`/`SafeDevice` (`run`/`call`/`callAsync`) from anywhere else — label the writes so a gate can hold them (rule 9). A raw `motor.setPower(...)` anywhere else is a bug — fix it before anything else.
 
 2. **Never block waiting for the hardware thread while on it.** Calling `hardware.call(...)` or `device.call(...)` from inside a `hardware = true` loop, an `@OnHardwareThread` subscriber, or a `bulkRead` reader **deadlocks the robot** — the single thread waits on a task it can never start. There, use `device.raw()` and touch the device directly. `call(...)` is only for callers *off* the hardware thread.
 
@@ -28,6 +28,8 @@ The skill is mostly about **knowing which thread a piece of code will run on, an
 7. **Telemetry reads topics, not devices.** In `onSafeLoop()`, use `orchestrator.getLatestValue(...)`. Never call `getCurrentPosition()` or similar from the OpMode thread — that is exactly the race Synapse exists to prevent.
 
 8. **Verify on the bench before the field.** Every new drivetrain gets a direction-test OpMode that spins each motor from one button (see `references/recipes.md`). Motor direction is wiring, not code — five minutes with wheels off the ground saves a match.
+
+9. **Use a gate when hardware must not move until a condition holds.** Label the writes (`fl.labels("write").run(...)`, `@OnHardwareThread(labels = {"write"})`), `hardware.restrict("write", GateMode.QUEUE)` in `onSafeInit`, and `hardware.release("write")` from the condition (e.g. a `g1/x/rising` subscriber). An action runs, or its caller finds out why it didn't — nothing crashes.
 
 ---
 
@@ -57,6 +59,29 @@ Every thread is a daemon named `synapse-<name>-<n>`; the hardware thread is `syn
 **Gamepad publishing defaults.** `SafeOpMode.init()` sets `publishGamepads` to `true` for `@TeleOp` OpModes and `false` for Autonomous/other. Use `attachGamepad(gamepad, "g1")` instead of calling `GamepadAdaptor.attach` directly so the default is respected. Set `publishGamepads = true` in `onSafeInit()` to opt in (auto), or `publishGamepads = false` to opt out (teleop).
 
 **Publishing flow:** `publish()` updates the topic's latest-value cache *synchronously on the caller's thread*, then enqueues subscriber callbacks onto the callback pool (or the hardware thread for `@OnHardwareThread` subscribers). Publishing is always non-blocking — even from the hardware thread.
+
+---
+
+## Labels, gates, and slots
+
+Every hardware-thread submission — `run`/`call`/`callAsync`, `@OnHardwareThread` dispatches, `hardware = true` ticks — may carry optional **labels** and one optional **slot**. Labelling is always optional; unlabelled work is first-class (reachable only via `HardwareGate.ALL`/`UNLABELLED`).
+
+- **Labels** are `/`-separated paths (`write/drive` is a sublabel of `write`). `restrict("write", GateMode.QUEUE)` covers `write` and all sublabels downward until `release("write")`.
+- **DROP** discards covered work; **QUEUE** holds it and runs it in submission order when uncovered. Multi-label work is covered if any label is; the strictest wins. Held work re-evaluates on every gate change — a later DROP drops it retroactively, so DROP means never.
+- **Sealed / except:** `hardware.restrict("shooter").drop().sealChildren().except("shooter/write").apply()` — a seal alone decides below it (child gate ops refused); `except` carves a subtree out of that restriction only.
+- **Slots** coalesce: at most one pending action per slot, newest supersedes (`SUPERSEDED`) — a 50 Hz setpoint stream can never pile up. Periodic work has labels but no slots: covered ticks skip and resume at release.
+- **The error rule:** an action runs, or its caller finds out why it didn't — and nothing crashes. Dropped `run` work is counted + summarised at release; `callAsync` futures complete exceptionally (`HardwareActionRejectedException`); blocking `call` fails fast with it (never waits behind a hold); gate ops return `boolean` and never throw.
+
+```java
+hardware.restrict("write", GateMode.QUEUE);                             // onSafeInit: hold all writes
+fl.labels("write").slot("fl-power").run(m -> m.setPower(p));            // labelled + slotted write
+hardware.release("write");                                              // from a g1/x/rising subscriber
+
+hardware.restrict("shooter").queue().except("shooter/write").apply();   // freeze a subsystem during a macro
+orchestrator.runAction("shooter/macro").whenComplete((v, t) -> hardware.release("shooter"));
+```
+
+Full semantics — label escapes, reserved roots, sealed/except edge cases — in `references/api-surface.md`; patterns in `references/recipes.md`.
 
 ---
 
@@ -207,18 +232,22 @@ com.aaravlabs.synapse
 
 com.aaravlabs.synapse.annotation
   @SubscribedTo(topic = "...")                  repeatable; 0-1 params
-  @RunPeriodically(hz = 20, hardware = false)   repeatable; no params
+  @RunPeriodically(hz, hardware, labels)        repeatable; no params; labels gate hardware ticks
   @RunnableAction("name")                       not repeatable; no params, void
-  @OnHardwareThread                             modifier for @SubscribedTo
+  @OnHardwareThread(labels, slot)               modifier for @SubscribedTo; both optional
 
 com.aaravlabs.synapse.ftc
   SafeOpMode         orchestrator / hardware / safeMap + 5 hooks
                       publishGamepads / attachGamepad(gamepad, "g1")
   FtcOrchestrator    create() / create(sink)
-  HardwareActions    run / call / call(+timeout) / callAsync
+  HardwareActions    run / call / call(+timeout) / callAsync  (+ labelled overloads)
+                     labels(...)/.slot(...) scopes · restrict / release / isRestricted
                      bulkRead / stopBulkRead / isHardwareThread
                      assertNotHardwareThread / tick / shutdown(=closes ALL)
-  SafeDevice<T>      run / call / callAsync / raw()
+  HardwareGate       ALL ("~all") / UNLABELLED ("~unlabelled"); label tree; restrict/release/isRestricted
+  GateMode           DROP | QUEUE          ChildPolicy:  INDEPENDENT | SEALED
+  HardwareActionRejectedException  checked; reason() = DROPPED_BY_GATE | SUPERSEDED
+  SafeDevice<T>      run / call / callAsync / raw() · labels(...)/.slot(...) scopes
   SafeHardwareMap    device(Class, name) / raw()
   GamepadAdaptor     attach(orch, gamepad, "g1") -> "GamepadAdaptor:g1"
   BulkReader         read(HardwareView)     @FunctionalInterface

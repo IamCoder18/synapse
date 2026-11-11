@@ -229,6 +229,62 @@ hw.bulkRead(50, view -> {
 });
 ```
 
+### Labels, gates, and slots
+
+Every hardware-thread submission may carry optional **labels** and an optional
+**slot**, and passes through a gate that can keep it away from hardware
+entirely. Labelling is always optional — the calls above are first-class.
+
+```java
+HardwareActions hw = orchestrator.hardware();
+
+hw.run("write", () -> motor.setPower(0.5));           // one label
+hw.labels("write", "teleop").slot("drive-power")      // labels + slot
+        .run(() -> motor.setPower(p));
+
+hw.restrict("write", GateMode.QUEUE);  // hold write/** — reads keep flowing
+hw.release("write");                   // held writes run; slotted streams collapse
+```
+
+Labels are `/`-separated paths whose structure is a **hierarchy**:
+`write/drive` is a sublabel of `write`, and `restrict("write", …)` covers both —
+downward only, never parents or siblings. A literal `/` inside a segment is
+written `~1`, a literal `~` as `~0` (JSON-Pointer style), so `write~1part` is a
+single segment named `write/part` and is *not* under `write`. Two reserved
+labels anchor the tree: `HardwareGate.ALL` restricts every hardware action
+(including unlabelled work) and `HardwareGate.UNLABELLED` the label-less ones.
+
+`restrict(label, GateMode.DROP)` discards covered work; `QUEUE` holds it until
+`release` and then runs it in submission order. An action with several labels
+is held if *any* is covered — strictest wins (DROP beats QUEUE beats running).
+The fluent form adds a child policy and carve-outs:
+
+```java
+hardware.restrict("shooter").drop().sealChildren()  // nothing below may renegotiate
+        .except("shooter/write")                    // shooter/write/** stays live
+        .apply();
+```
+
+`SEALED` refuses `restrict`/`release` on covered children (`false` plus a
+warning — gate operations never throw) and suspends pre-existing child
+restrictions until it lifts. `except(...)` carves a label's subtree out of
+*that* restriction only; other restrictions still apply.
+
+A **slot** bounds a stream: at most one pending action per slot exists and only
+the newest is used, so a 50 Hz setpoint collapses to one write instead of
+piling up. Slots never apply to periodic work — labelled
+`@RunPeriodically(hardware = true)` ticks and `bulkRead` readers simply *skip*
+while covered and resume on release.
+
+**An action runs, or its caller finds out why it didn't — and nothing
+crashes.** Fire-and-forget work is counted and summarized in one warning per
+release; `callAsync` futures complete exceptionally with a
+`HardwareActionRejectedException` (`DROPPED_BY_GATE` or `SUPERSEDED`); blocking
+`call` fails fast with the same checked exception instead of waiting behind a
+hold. The worked examples (hold writes until the match timer starts; freeze a
+subsystem while an action runs) live in the
+[gating guide](https://github.com/IamCoder18/synapse/blob/main/website/src/content/docs/guides/gating-hardware.mdx).
+
 ### Gamepad
 
 `GamepadAdaptor.attach(orchestrator, gamepad1, "g1")` pre-creates and publishes
@@ -330,7 +386,11 @@ also served at `/docs/get-started/install` on the website.
 | `@OnHardwareThread` | `com.aaravlabs.synapse.annotation` | Forces a `@SubscribedTo` onto the hardware thread. |
 | `SafeOpMode` | `com.aaravlabs.synapse.ftc` | Drop-in `OpMode` base class. |
 | `FtcOrchestrator` | `com.aaravlabs.synapse.ftc` | Factory that wires `android.util.Log` into a `LogSink`. |
-| `HardwareActions` | `com.aaravlabs.synapse.ftc` | `run` / `call` / `callAsync` / `bulkRead`. |
+| `HardwareActions` | `com.aaravlabs.synapse.ftc` | `run` / `call` / `callAsync` / `bulkRead`, plus `labels` / `slot` / `restrict` / `release`. |
+| `HardwareGate` | `com.aaravlabs.synapse.ftc` | Label tree (`ALL` / `UNLABELLED` roots), restrictions, slots. |
+| `GateMode` | `com.aaravlabs.synapse.ftc` | `DROP` or `QUEUE` — what a restriction does to covered work. |
+| `ChildPolicy` | `com.aaravlabs.synapse.ftc` | `INDEPENDENT` or `SEALED` children under a restriction. |
+| `HardwareActionRejectedException` | `com.aaravlabs.synapse.ftc` | Why an action didn't run: `DROPPED_BY_GATE` or `SUPERSEDED`. |
 | `SafeDevice<T>` | `com.aaravlabs.synapse.ftc` | Hardware wrapper that routes through the hardware thread. |
 | `SafeHardwareMap` | `com.aaravlabs.synapse.ftc` | `HardwareMap` that produces `SafeDevice<T>`s. |
 | `GamepadAdaptor` | `com.aaravlabs.synapse.ftc` | Reflects `Gamepad` fields into topics. |
@@ -340,9 +400,10 @@ also served at `/docs/get-started/install` on the website.
 
 ## Testing & development
 
-The library ships with 51 JUnit 5 tests covering topics, subscriptions,
-periodic loops, two-pool isolation, hardware-thread serial execution, soak
-tests, race conditions, and the real-FTC-SDK `Gamepad` field set.
+The library ships with 119 JUnit 5 tests covering topics, subscriptions,
+periodic loops, two-pool isolation, hardware-thread serial execution, the
+label/gate/slot machinery, soak tests, race conditions, and the real-FTC-SDK
+`Gamepad` field set.
 
 ```bash
 ./gradlew test                       # run the test suite

@@ -1,6 +1,6 @@
 ---
 title: HardwareActions
-description: The facade over the hardware thread — run, call, callAsync, bulkRead.
+description: The facade over the hardware thread — run, call, callAsync, bulkRead — plus labels, slots, and the gate.
 ---
 
 # HardwareActions
@@ -15,6 +15,8 @@ Four methods, four use cases:
 | `call(action)` | **yes** | the value | reads you need *now* |
 | `callAsync(action)` | no | `CompletableFuture<T>` | reads you'll consume later |
 | `bulkRead(hz, reader)` | no | `BulkReadHandle` | periodic sensor sampling |
+
+Every one of these submissions — and every `@OnHardwareThread` dispatch and `hardware = true` tick — passes through the [gate](#the-gate-restrict--release) before it reaches the thread. Submissions may carry optional **[labels](#labels-and-the-label-tree)** and an optional **[slot](#slots)**; the gate uses them to hold, drop, or coalesce work. All of that is optional: `hardware.run(r)` with no label and no slot is first-class and permanently supported.
 
 ## run — async write
 
@@ -55,6 +57,102 @@ hardware.bulkRead(50, view -> {
 
 Schedules the `BulkReader` on the hardware thread at the given rate. The reader receives a `HardwareView` with `publish(topic, value)` and `getLatestValue(topic, type)`. Returns a `BulkReadHandle`; call `hardware.stopBulkRead(handle)` to cancel.
 
+## Labels and the label tree
+
+Every submission may carry any number of **labels**, and labelling is always optional — unlabelled work is ordinary work and stays supported forever.
+
+```java
+hardware.run(r);                                       // unlabelled — fine, forever
+hardware.run("write", r);                              // single-label sugar
+hardware.call("write", () -> ...);                     // label sugar on call/callAsync too
+hardware.labels("write", "climb").slot("claw").run(r); // the general form
+hardware.slot("claw").run(r);                          // slot only
+```
+
+`labels(...)` and `slot(...)` return a **new immutable scope** whose `run`, `call`, `callAsync`, and `bulkRead` carry the bindings — labels replace labels, slot replaces slot. Keep them around freely; they are cheap and never mutate. A malformed or reserved label throws `IllegalArgumentException` at submission time (for annotations, at `registerNode` — a bad label fails before the first dispatch).
+
+A label is a `/`-separated path, and **the path structure is the hierarchy**: `write/drive` is a sublabel of `write`. A restriction on `write` covers `write`, `write/drive`, `write/drive/power` — downward only (restricting `write/drive` never holds `write`). Matching is by whole decoded segments, never raw string prefixes: `write` never catches `writex`.
+
+Inside a segment, tilde escapes handle the two special characters (JSON-Pointer style: `~1` is a literal `/`, `~0` is a literal `~`):
+
+| You write | Decoded segments | Note |
+| --- | --- | --- |
+| `write/drive` | `write`, `drive` | two segments — `write/drive` **is** under `write` |
+| `write~1part` | `write/part` | **one** segment literally named `write/part` — **not** under `write` |
+| `~01` | `~1` | decode is one left-to-right pass: `~0` → `~`, then the `1` stays |
+| `claw~0v2` | `claw~v2` | `~0` is a literal `~` |
+
+Encode canonically: turn `~` into `~0` first, then `/` into `~1`. Malformed labels — `write~`, `write~2`, `a//b`, `/a`, `a/`, the empty string — throw at submission/binding time; gate operations refuse them with `false` and a warning.
+
+Two roots are reserved and cannot label an action:
+
+| Constant | Value | Restricting it covers |
+| --- | --- | --- |
+| `HardwareGate.ALL` | `~all` | **every** hardware action, labelled or not |
+| `HardwareGate.UNLABELLED` | `~unlabelled` | exactly the actions that carry no label |
+
+Nothing else can reach unlabelled work. (Exception: `except(HardwareGate.UNLABELLED)` on an `ALL` restriction lets unlabelled work through — see below.)
+
+## Slots
+
+A submission may also claim one **slot** — an opaque string (no hierarchy, no escapes, must not be empty):
+
+```java
+hardware.labels("write").slot("claw").run(r);
+```
+
+The rule: **at most one pending (not-yet-started) action per slot exists anywhere** — whether it is held by the gate or just queued behind busy hardware work. A newer action with the same slot supersedes the older one, which fails with `Reason.SUPERSEDED`; only the most recent action per slot runs. A slotted stream (a 50 Hz setpoint, say) can never pile up: whatever is waiting collapses to the latest value.
+
+> **One slot, one action.** Four motors written as four separate slotted submissions coalesce into *one* — the last one submitted. Put a multi-device write in a single `run(...)` body, or give each stream its own slot.
+
+Periodic work — `@RunPeriodically(hardware = true)` ticks and `bulkRead` readers — has labels but **no slots** (`scope.bulkRead(...)` throws `IllegalArgumentException` if the scope carries a slot). While restricted, ticks are **skipped under either mode** — a tick is stale the moment it is late, so it is never queued — and the loop resumes on release.
+
+## The gate: restrict / release
+
+Every hardware-thread submission passes through the `HardwareGate`. `hardware.restrict(label, mode)` covers the label **and all its sublabels** (downward only), and `hardware.release(label)` lifts the restriction registered at exactly that label:
+
+| Mode | Covered work | Blocking `call` | Periodic ticks | Use for |
+| --- | --- | --- | --- | --- |
+| `GateMode.DROP` | never runs; dropped and counted | throws immediately | skipped | work that must never happen — or is worthless or dangerous once delayed |
+| `GateMode.QUEUE` | held; runs in submission order once nothing covers it | throws immediately (never waits) | skipped | work that should still happen once it is safe |
+
+```java
+hardware.restrict("write", GateMode.QUEUE);   // sugar: independent children, no exceptions
+hardware.release("write");                    // -> boolean
+hardware.isRestricted("write");               // -> boolean
+
+// The fluent form adds child policy and exceptions:
+hardware.restrict("shooter").drop().sealChildren().except("shooter/write").apply();
+```
+
+Coverage rules, precisely:
+
+- An action carrying several labels is covered if **any** of its labels is covered; the strictest covering restriction decides — DROP beats QUEUE beats running.
+- Held actions are re-evaluated on every gate change. A later DROP restriction **drops still-held work retroactively**; once all of an action's labels are free, it runs in submission order.
+- `release(label)` removes the restriction at exactly that label — parents and children are untouched. A one-line warning summarizes what was dropped or skipped while restricted (never one log line per action).
+- Gate operations **never throw**: `restrict`, `release`, and `apply()` return `false` and log a warning when refused (malformed label, sealed ancestor, nothing restricted there, exception outside the subtree).
+
+**Exceptions** (`except(label)`) carve the label and its sublabels out of *this* restriction only — other restrictions still apply to the uncovered labels. An exception must sit inside the covered subtree or the whole `apply()` is refused. `except(HardwareGate.UNLABELLED)` on an `ALL` restriction lets unlabelled work through while everything labelled stays covered. An excepted subtree sits outside a seal too, so it stays independently gateable.
+
+**Child policy** decides what the restriction allows its children while active:
+
+| ChildPolicy | Behavior |
+| --- | --- |
+| `INDEPENDENT` (default) | children may be restricted and released freely; the strictest restriction wins |
+| `SEALED` | this restriction alone decides for its covered subtree. `restrict`/`release` on covered descendants are refused with `false` + a warn — never throws. Pre-existing child restrictions are **suspended**, not deleted, and re-apply when the seal lifts (including retro-dropping then-held work). The seal's own label stays releasable — that is how it lifts. |
+
+## What happens when work is blocked
+
+The one rule: **an action runs, or its caller finds out why it didn't — and nothing crashes.**
+
+| | `DROPPED_BY_GATE` | `SUPERSEDED` |
+| --- | --- | --- |
+| `run(...)` | never runs; counted, and summarized in one warn at `release(...)` — no log spam | silently discarded — that is what slot coalescing means |
+| `callAsync(...)` | future completes exceptionally with `HardwareActionRejectedException` | future completes exceptionally with `HardwareActionRejectedException` |
+| `call(...)` | **fails fast**: throws the checked `HardwareActionRejectedException` immediately — it never waits behind a QUEUE hold | same fail-fast throw, if a newer same-slot action replaced it before it ran |
+
+`call(...)`'s exception message suggests the fix (use `callAsync(...)`, `run(...)`, or release the label). `HardwareActionRejectedException` is **checked** on purpose — the compiler forces every blocking caller to decide what to do about "the shop is closed". An unobserved failed `callAsync` future is inert: no thread throws, nothing dies. `Reason.SUPERSEDED` is not an error condition; check `e.reason()` before treating it as one.
+
 ## Diagnostics
 
 | Method | Purpose |
@@ -66,5 +164,6 @@ Schedules the `BulkReader` on the hardware thread at the given rate. The reader 
 
 ## Next steps
 
+- [Gating hardware work](/docs/guides/gating-hardware) — the gate in two worked, end-to-end patterns.
 - [SafeDevice](/docs/ftc/safe-device) — per-device wrappers over this facade.
 - [`@OnHardwareThread`](/docs/annotations/on-hardware-thread) — the annotation path to the same thread.

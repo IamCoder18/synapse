@@ -40,6 +40,10 @@ The reverse rule matters just as much:
 
 `SafeOpMode.loop()` defends the other direction with `hardware.assertNotHardwareThread()`: if your `onSafeLoop()` (or anything it calls) ends up executing on the hardware thread, the OpMode fails immediately with `IllegalStateException` instead of corrupting the bus.
 
+## The hardware gate
+
+Before work reaches the hardware thread, it passes through the **`HardwareGate`**. Every submission — `run`/`call`/`callAsync`/`bulkRead`, every `@OnHardwareThread` dispatch, every `hardware = true` tick — may carry optional **labels** (gate names, arranged in a hierarchy) and an optional **slot** (coalescing: only the newest pending action per slot runs). A gate restriction can then hold or drop covered work — `hardware().restrict("write", GateMode.QUEUE)` freezes every write until `release("write")` — while reads and unlabelled work keep flowing. All of it is optional and additive: unlabelled, unslotted submissions are first-class and unaffected. The full policy and two worked patterns are in [Gating hardware work](/docs/guides/gating-hardware).
+
 ## What runs where — a publishing walkthrough
 
 When any code calls `orchestrator.publish("intake/set/power", 0.75)`:
@@ -74,4 +78,5 @@ The OpMode thread drives the lifecycle; the workers are created and destroyed in
 ## Next steps
 
 - [Orchestrator](/docs/concepts/orchestrator) — the API you use to drive all of this.
+- [Gating hardware work](/docs/guides/gating-hardware) — holding, dropping, and coalescing hardware-thread work.
 - [SafeOpMode](/docs/ftc/safe-opmode) — the lifecycle hooks in detail.

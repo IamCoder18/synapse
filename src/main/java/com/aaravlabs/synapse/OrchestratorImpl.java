@@ -75,6 +75,13 @@ public final class OrchestratorImpl implements Orchestrator {
     private final com.aaravlabs.synapse.ftc.HardwareActions hardwareActions;
     private final com.aaravlabs.synapse.ftc.HardwareView hardwareView;
 
+    /**
+     * The gate every hardware-thread submission passes through: labels,
+     * restrictions ({@code restrict}/{@code release}), slots, and the drop/hold
+     * bookkeeping. See {@link com.aaravlabs.synapse.ftc.HardwareGate}.
+     */
+    private final com.aaravlabs.synapse.ftc.HardwareGate hardwareGate;
+
     private volatile boolean closed = false;
 
     private OrchestratorImpl(String name, LogSink log) {
@@ -106,6 +113,8 @@ public final class OrchestratorImpl implements Orchestrator {
 
         this.hardwareActions = new com.aaravlabs.synapse.ftc.HardwareActions(this);
         this.hardwareView = new com.aaravlabs.synapse.ftc.HardwareView(this);
+        this.hardwareGate = new com.aaravlabs.synapse.ftc.HardwareGate(
+                name, log, r -> hardwareThread.execute(r));
     }
 
     private volatile Thread hardwareThreadThread;
@@ -422,22 +431,31 @@ public final class OrchestratorImpl implements Orchestrator {
     /**
      * Re-target a subscription so its handler runs on the hardware thread instead
      * of the callback pool. Used by the binder when it sees {@code @SubscribedTo
-     * + @OnHardwareThread}.
+     * + @OnHardwareThread}. Each dispatch is one gate submission carrying the
+     * method's labels and slot.
      */
     public void markSubscriptionAsHardwareThreaded(Subscription sub) {
+        markSubscriptionAsHardwareThreaded(sub, null, null);
+    }
+
+    /**
+     * {@link #markSubscriptionAsHardwareThreaded(Subscription)} with the
+     * {@code @OnHardwareThread} gate labels and slot applied to each dispatch.
+     */
+    public void markSubscriptionAsHardwareThreaded(Subscription sub, String[] labels, String slot) {
         Topic<?> t = sub.topic();
         SubscriberList list = subscribers.get(t);
         if (list == null) return;
         MessageHandler original = sub.handler();
         MessageHandler wrapped = msg -> {
             if (closed) return;
-            hardwareThread.execute(() -> {
+            hardwareGate.submit(labels, slot, () -> {
                 try {
                     original.accept(msg);
                 } catch (Throwable th) {
                     log.error(name, "hardware-thread subscriber threw", th);
                 }
-            });
+            }, null, true);
         };
         // Replace in the list. Subscription object's handler() returns the
         // original so removeSubscription still works correctly.
@@ -547,17 +565,9 @@ public final class OrchestratorImpl implements Orchestrator {
 
     @Override
     public void runOnHardwareThread(Runnable task) {
-        if (closed) {
-            log.warn(name, "runOnHardwareThread on closed orchestrator ignored");
-            return;
-        }
-        hardwareThread.execute(() -> {
-            try {
-                task.run();
-            } catch (Throwable t) {
-                log.error(name, "hardware-thread task threw", t);
-            }
-        });
+        // Routed through the gate like every other hardware submission, so
+        // HardwareGate.ALL / UNLABELLED restrictions reach unlabelled work too.
+        hardwareGate.submit(null, null, task, null, true);
     }
 
     /** @return true if the calling thread is the orchestrator's hardware thread. */
@@ -565,10 +575,30 @@ public final class OrchestratorImpl implements Orchestrator {
         return Thread.currentThread() == hardwareThreadThread;
     }
 
+    /**
+     * @return the gate every hardware-thread submission passes through. Used by
+     *         {@link com.aaravlabs.synapse.ftc.HardwareActions} for
+     *         restrict/release and by the binder's routing.
+     */
+    public com.aaravlabs.synapse.ftc.HardwareGate gate() {
+        return hardwareGate;
+    }
+
     /** Package-private: used by the binder to schedule @RunPeriodically(hardware=true). */
     public ScheduledFuture<?> scheduleHardwarePeriodic(Runnable task, long delayMs) {
+        return scheduleHardwarePeriodic(task, delayMs, null);
+    }
+
+    /**
+     * {@link #scheduleHardwarePeriodic(Runnable, long)} with gate labels: a tick
+     * whose labels are restricted is skipped (never queued — a tick is stale the
+     * moment it is late) and the loop resumes on its normal schedule once released.
+     */
+    public ScheduledFuture<?> scheduleHardwarePeriodic(Runnable task, long delayMs, String[] labels) {
+        com.aaravlabs.synapse.ftc.HardwareGate.validateLabels(labels);
         return hardwareThread.scheduleWithFixedDelay(() -> {
             try {
+                if (!hardwareGate.tickAllowed(labels)) return;
                 task.run();
             } catch (Throwable t) {
                 log.error(name, "hardware-thread periodic threw", t);
@@ -583,11 +613,23 @@ public final class OrchestratorImpl implements Orchestrator {
      */
     public com.aaravlabs.synapse.ftc.HardwareActions.BulkReadHandle scheduleHardwareBulkRead(
             int hz, com.aaravlabs.synapse.ftc.BulkReader reader) {
+        return scheduleHardwareBulkRead(hz, reader, null);
+    }
+
+    /**
+     * {@link #scheduleHardwareBulkRead(int, com.aaravlabs.synapse.ftc.BulkReader)}
+     * with gate labels: a tick whose labels are restricted is skipped and resumes
+     * once released.
+     */
+    public com.aaravlabs.synapse.ftc.HardwareActions.BulkReadHandle scheduleHardwareBulkRead(
+            int hz, com.aaravlabs.synapse.ftc.BulkReader reader, String[] labels) {
         if (hz <= 0) throw new IllegalArgumentException("hz must be > 0");
+        com.aaravlabs.synapse.ftc.HardwareGate.validateLabels(labels);
         long delayMs = Math.max(1, 1000L / hz);
         com.aaravlabs.synapse.ftc.HardwareView view = hardwareView;
         ScheduledFuture<?> f = hardwareThread.scheduleWithFixedDelay(() -> {
             try {
+                if (!hardwareGate.tickAllowed(labels)) return;
                 reader.read(view);
             } catch (Throwable t) {
                 log.error(name, "bulk-read callback threw", t);
@@ -679,6 +721,7 @@ public final class OrchestratorImpl implements Orchestrator {
         scheduler.shutdownNow();
         callbacks.shutdownNow();
         actionPool.shutdownNow();
+        hardwareGate.close();
         hardwareThread.shutdownNow();
         try {
             scheduler.awaitTermination(100, TimeUnit.MILLISECONDS);

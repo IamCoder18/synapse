@@ -59,6 +59,28 @@ import java.lang.annotation.Target;
  * @RunPeriodically(hardware = true)}, which routes the loop to the same single
  * thread.
  *
+ * <h2>Labels and slots</h2>
+ *
+ * <p>{@link #labels()} gives each dispatched message gate labels, and
+ * {@link #slot()} claims a coalescing slot — the same policy surface as
+ * {@code HardwareActions.labels(...).slot(...)}:
+ *
+ * <pre>{@code
+ * @SubscribedTo(topic = "drive/set/power")
+ * @OnHardwareThread(labels = "write", slot = "drive-power")
+ * public void onPower(double p) {
+ *     motor.raw().setPower(p);
+ * }
+ * }</pre>
+ *
+ * <p>While a {@link com.aaravlabs.synapse.ftc.HardwareGate gate} restriction covers
+ * {@code "write"}, dispatches are dropped or held per the restriction's
+ * {@link com.aaravlabs.synapse.ftc.GateMode}; with a slot, only the newest
+ * undelivered message is kept, so a flooded setpoint topic collapses to the latest
+ * value instead of piling up. Labelling is optional — no labels means the gate can
+ * only reach this method through {@code HardwareGate.ALL} /
+ * {@code HardwareGate.UNLABELLED}.
+ *
  * <h2>What this annotation does <em>not</em> do</h2>
  *
  * <ul>
@@ -77,4 +99,23 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)
 public @interface OnHardwareThread {
+
+    /**
+     * Gate labels for each dispatched message, as {@code /}-separated paths
+     * ({@code "write"}, {@code "write/drive"}). While a gate restriction covers any
+     * of them, dispatches of this method are dropped or held per the restriction's
+     * {@link com.aaravlabs.synapse.ftc.GateMode}. May be empty (the default): no
+     * labels. {@link com.aaravlabs.synapse.ftc.HardwareGate#ALL} and
+     * {@link com.aaravlabs.synapse.ftc.HardwareGate#UNLABELLED} are reserved and
+     * cannot appear here. Malformed labels fail fast at {@code registerNode}.
+     */
+    String[] labels() default {};
+
+    /**
+     * Coalescing slot: at most one undelivered dispatch per slot exists — a newer
+     * message supersedes an older one that has not started, so a flooded topic
+     * collapses to its latest value. Opaque string, no hierarchy. Empty (the
+     * default) means no slot. Slots do not apply to periodic work.
+     */
+    String slot() default "";
 }
