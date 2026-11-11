@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-11-11
+## [0.5.1] - 2026-11-11
 
 ### Added
 
@@ -16,6 +16,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only when `publishGamepads` is true, so the auto/teleop default is respected.
   Returns the registered node name or `null` when gamepad publishing is
   disabled for this OpMode.
+
+### Changed
+
+- **`SafeOpMode` defaults gamepad publishing by OpMode type.** `init()` now sets
+  `publishGamepads` to `true` for `@TeleOp` OpModes and `false` for
+  Autonomous/other OpModes. Gamepads are opt-in for auto OpModes and can be
+  optionally disabled in teleop by setting `publishGamepads = false` in
+  `onSafeInit()`. Direct `GamepadAdaptor.attach(...)` calls are unaffected.
+
+## [0.5.0] - 2026-11-11
+
+### Added
 
 - **Hardware-thread labels, gate restrictions, and slots: every piece of
   scheduled hardware work can now be named, held back, or collapsed to its
@@ -103,14 +115,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   decided by a button -- is three lines of gate and one subscriber, and the
   website's gating guide walks through it and through freezing a subsystem for
   the duration of a `@RunnableAction`.
-
-### Changed
-
-- **`SafeOpMode` defaults gamepad publishing by OpMode type.** `init()` now sets
-  `publishGamepads` to `true` for `@TeleOp` OpModes and `false` for
-  Autonomous/other OpModes. Gamepads are opt-in for auto OpModes and can be
-  optionally disabled in teleop by setting `publishGamepads = false` in
-  `onSafeInit()`. Direct `GamepadAdaptor.attach(...)` calls are unaffected.
 
 ### Fixed
 
@@ -348,7 +352,8 @@ listeners registered, `publish` costs a single volatile read.
   loops, two-pool isolation, hardware-thread serial execution, soak tests,
   race conditions, and the real-FTC-SDK `Gamepad` field set.
 
-[Unreleased]: https://github.com/IamCoder18/synapse/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/IamCoder18/synapse/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/IamCoder18/synapse/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/IamCoder18/synapse/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/IamCoder18/synapse/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/IamCoder18/synapse/compare/v0.3.1...v0.4.0
