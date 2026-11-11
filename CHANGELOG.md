@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-11
+
 ### Added
 
 - **`SafeOpMode.attachGamepad(Object, String)`** — attaches a `GamepadAdaptor`
@@ -346,7 +348,8 @@ listeners registered, `publish` costs a single volatile read.
   loops, two-pool isolation, hardware-thread serial execution, soak tests,
   race conditions, and the real-FTC-SDK `Gamepad` field set.
 
-[Unreleased]: https://github.com/IamCoder18/synapse/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/IamCoder18/synapse/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/IamCoder18/synapse/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/IamCoder18/synapse/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/IamCoder18/synapse/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/IamCoder18/synapse/compare/v0.3.0...v0.3.1
