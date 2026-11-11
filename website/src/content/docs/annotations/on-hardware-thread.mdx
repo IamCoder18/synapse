@@ -17,7 +17,28 @@ public void onTarget(double power) {
 
 ## Attributes
 
-None. It is a pure marker, and it only affects methods that also carry `@SubscribedTo`.
+| Attribute | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `labels` | `String[]` | `{}` | gate labels for every dispatched message |
+| `slot` | `String` | `""` | coalescing slot for the dispatches |
+
+Both are optional — with neither, the annotation is still a pure marker. It only affects methods that also carry `@SubscribedTo`.
+
+## Labels and slots
+
+`labels` gives each dispatched message [gate labels](/docs/ftc/hardware-actions) — `/`-separated paths like `"write"` or `"write/drive"`; the path structure is the hierarchy. While a gate restriction covers any of the labels, dispatches of this method are dropped or held per the restriction's `GateMode`. The single-element shorthand `labels = "write"` works in Java; use `labels = {"write", "climb"}` for several. Malformed labels throw at `registerNode` — a bad label fails before the first dispatch — and the reserved `HardwareGate.ALL` / `HardwareGate.UNLABELLED` roots cannot appear here.
+
+`slot` claims a coalescing slot: **only the newest undelivered dispatch survives**. A newer message supersedes an older one that has not started (it fails with `Reason.SUPERSEDED` — see [what happens when work is blocked](/docs/ftc/hardware-actions#what-happens-when-work-is-blocked)), so a flooded topic collapses to its latest value instead of piling up. That makes slots ideal for setpoint topics: whatever gate state was, the hardware applies the driver's *current* command, not a replayed queue of stale ones. The slot is an opaque string — no hierarchy, no escapes; empty means no slot.
+
+```java
+@SubscribedTo(topic = "drive/set/power")
+@OnHardwareThread(labels = "write", slot = "drive-power")
+public void onPower(double p) {
+    motor.raw().setPower(p);
+}
+```
+
+Labelling is optional: with no labels, the gate can only reach this method through `HardwareGate.ALL` or `HardwareGate.UNLABELLED`. With a label, one `restrict("write", ...)` can hold or drop every write-side dispatch at once — see the [gating guide](/docs/guides/gating-hardware) for the patterns.
 
 ## Why a dedicated thread
 
@@ -43,5 +64,6 @@ Work on it is strictly serial — no locks are needed anywhere in user code.
 
 ## Next steps
 
+- [Gating hardware work](/docs/guides/gating-hardware) — what labels and slots buy you, end to end.
 - [HardwareActions](/docs/ftc/hardware-actions) — routing hardware work from anywhere else.
 - [Architecture](/docs/concepts/architecture) — the full threading picture.

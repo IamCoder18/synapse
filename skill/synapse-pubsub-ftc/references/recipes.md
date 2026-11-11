@@ -248,6 +248,40 @@ public void launch() {
 orchestrator.runAction("shooter/launch");
 ```
 
+## Template — hold writes until the match timer starts
+
+```java
+// In onSafeInit(): hold every hardware write until the match timer starts.
+hardware.restrict("write", GateMode.QUEUE);
+
+// Writes carry the label; a slot keeps the hold collapsed to the newest setpoint.
+fl.labels("write").slot("fl-power").run(m -> m.setPower(pFL));
+
+// In a node: release from a button-edge subscriber.
+@SubscribedTo(topic = "g1/x/rising")
+@OnHardwareThread
+public void matchStart(Boolean v) {
+    orchestrator.hardware().release("write");
+}
+```
+
+- DROP variant — `hardware.restrict("write", GateMode.DROP)` discards writes instead of holding (work that is worthless once delayed); `hardware.restrict("write").drop().sealChildren().apply()` makes it a master switch nothing below may renegotiate.
+- Slots collapse the hold: at most one pending action per slot, so a 50 Hz stream held for 30 s releases as one write per slot — never 1500 stale ones.
+- For a `@RunPeriodically(hz = 50, hardware = true, labels = {"write"})` loop, ticks are simply skipped while covered and resume at release — nothing accumulates at all.
+
+## Template — freeze a subsystem during an action
+
+```java
+// From a subscriber or onSafeLoop(): freeze the shooter for the whole macro.
+hardware.restrict("shooter").queue().except("shooter/write").apply();
+orchestrator.runAction("shooter/macro")
+        .whenComplete((v, t) -> hardware.release("shooter"));
+```
+
+- `except("shooter/write")` carves the macro's own labels out of **this** restriction only (other restrictions still apply), so the macro's writes pass while the rest of the subsystem is held. Add `.sealChildren()` if nothing below may renegotiate the freeze.
+- Topic-driven variant: instead of a macro's duration, restrict in a state subscriber (e.g. `shooter/state` flipping to spin-up/calibration) and release when it flips back.
+- `whenComplete` fires on success *and* failure — the release always happens; anything dropped or skipped while restricted is summarised in one WARN at release.
+
 ## Supported but no robot-validated recipe yet
 
 The library **fully supports** the patterns below — the APIs are stable and documented (`references/api-surface.md`). They are held out of this file only because the recipe has not yet been run on hardware. When asked for them, build from the documented building blocks and say plainly that the example has not been verified on a robot (do not present generated code as tested):
@@ -255,3 +289,5 @@ The library **fully supports** the patterns below — the APIs are stable and do
 - Field-centric mecanum drive — IMU via `safeMap.device(IMU.class, ...)`, heading rotation before the mix, `SafeDevice.raw()` for IMU reads inside the hardware loop
 - Bulk sensor reads — `HardwareActions.bulkRead(hz, reader)` with `HardwareView.publish`
 - Autonomous skeleton — state machine in a `@RunPeriodically` loop over topics
+- Emergency stop — `hardware.restrict(HardwareGate.ALL, GateMode.DROP).sealChildren().apply()` freezes every hardware action instantly
+- Gate sequencing (the two Templates above) — library-verified (`HardwareGateTest`), but the patterns have not yet been run on a robot

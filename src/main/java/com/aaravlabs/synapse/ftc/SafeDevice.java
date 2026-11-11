@@ -26,6 +26,9 @@ import java.util.function.Function;
  * SafeDevice<DcMotorEx> intake = hardware.device(DcMotorEx.class, "intake");
  * intake.run(m -> m.setPower(0.5));                     // async, safe
  * int pos = intake.call(DcMotorEx::getCurrentPosition); // sync, blocks caller
+ *
+ * // With gate labels and a coalescing slot (see HardwareGate):
+ * intake.labels("write", "intake").slot("intake-power").run(m -> m.setPower(p));
  * }</pre>
  *
  * @param <T> the wrapped hardware type (e.g. {@code DcMotorEx})
@@ -100,6 +103,75 @@ public final class SafeDevice<T> {
      */
     public T raw() {
         return raw;
+    }
+
+    /**
+     * Scope this device's calls to the given gate labels — the device-level mirror
+     * of {@link HardwareActions#labels(String...)}.
+     *
+     * @param labels the labels to bind
+     * @return a scope whose {@code run/call/callAsync} carry these labels
+     * @throws IllegalArgumentException if a label is malformed or reserved
+     */
+    public Scope<T> labels(String... labels) {
+        return new Scope<>(raw, hardware.labels(labels));
+    }
+
+    /**
+     * Scope this device's calls to the given coalescing slot — the device-level
+     * mirror of {@link HardwareActions#slot(String)}. At most one pending action per
+     * slot exists; only the most recent one is used.
+     *
+     * @param slot the slot to claim
+     * @return a scope whose calls carry this slot
+     * @throws IllegalArgumentException if the slot is null or empty
+     */
+    public Scope<T> slot(String slot) {
+        return new Scope<>(raw, hardware.slot(slot));
+    }
+
+    /**
+     * A {@link SafeDevice} bound to gate labels and/or a slot. Configurator calls
+     * return a new scope with that property set:
+     * {@code device.labels("write").slot("intake-power").run(...)}.
+     *
+     * @param <T> the wrapped hardware type
+     */
+    public static final class Scope<T> {
+
+        private final T raw;
+        private final HardwareActions.Scope scope;
+
+        Scope(T raw, HardwareActions.Scope scope) {
+            this.raw = raw;
+            this.scope = scope;
+        }
+
+        /** @return a new scope with these labels (replacing any previous) */
+        public Scope<T> labels(String... labels) {
+            return new Scope<>(raw, scope.labels(labels));
+        }
+
+        /** @return a new scope with this slot (replacing any previous) */
+        public Scope<T> slot(String slot) {
+            return new Scope<>(raw, scope.slot(slot));
+        }
+
+        /** {@link SafeDevice#run(Consumer)} with this scope's labels and slot. */
+        public void run(Consumer<? super T> action) {
+            scope.run(() -> action.accept(raw));
+        }
+
+        /** {@link SafeDevice#call(Function)} with this scope's labels and slot. */
+        public <R> R call(Function<? super T, ? extends R> action) throws Exception {
+            return scope.call(() -> action.apply(raw));
+        }
+
+        /** {@link SafeDevice#callAsync(Function)} with this scope's labels and slot. */
+        public <R> java.util.concurrent.CompletableFuture<R> callAsync(
+                Function<? super T, ? extends R> action) {
+            return scope.callAsync(() -> action.apply(raw));
+        }
     }
 
     @Override

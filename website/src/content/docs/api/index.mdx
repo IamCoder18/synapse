@@ -92,8 +92,9 @@ Method: 0–1 parameters; single-parameter type must match or be a supertype of 
 | --- | --- | --- |
 | `hz` | `int` | `20` |
 | `hardware` | `boolean` | `false` |
+| `labels` | `String[]` | `{}` |
 
-Method: no parameters, non-static. Fixed-delay scheduling (`1000 / hz` ms between completions; effective rate ≤ `hz`; first run immediate). Repeatable. `hz <= 0` warns and skips.
+Method: no parameters, non-static. Fixed-delay scheduling (`1000 / hz` ms between completions; effective rate ≤ `hz`; first run immediate). Repeatable. `hz <= 0` warns and skips. `labels` gate hardware ticks (skipped under any covering restriction, never queued); only meaningful with `hardware = true` — otherwise it warns and does nothing. Malformed labels throw at `registerNode`.
 
 ### @RunnableAction
 
@@ -105,7 +106,12 @@ Method: no parameters, returns `void`, non-static, not repeatable. Fired by `run
 
 ### @OnHardwareThread
 
-No attributes. Modifier for `@SubscribedTo` methods; re-routes the handler to the dedicated hardware thread.
+| Attribute | Type | Default |
+| --- | --- | --- |
+| `labels` | `String[]` | `{}` |
+| `slot` | `String` | `""` |
+
+Modifier for `@SubscribedTo` methods; re-routes the handler to the dedicated hardware thread. `labels` gate each dispatched message (dropped/held per a covering restriction's `GateMode`); `slot` coalesces — at most one undelivered dispatch per slot, newest wins (`Reason.SUPERSEDED` for the loser). Malformed labels throw at `registerNode`; `ALL`/`UNLABELLED` are reserved.
 
 ## `com.aaravlabs.synapse.ftc`
 
@@ -124,15 +130,62 @@ Obtained via `orchestrator.hardware()` or the `SafeOpMode` `hardware` field.
 | Method | Returns | Notes |
 | --- | --- | --- |
 | `run(action)` | `void` | async fire-and-forget |
+| `run(label, action)` | `void` | single-label sugar |
 | `call(action)` | `T` | blocks; unwraps exceptions; **deadlocks from the hardware thread** |
-| `call(action, timeout, unit)` | `T` | as above with `TimeoutException` |
-| `callAsync(action)` | `CompletableFuture<T>` | non-blocking; safe from the hardware thread |
+| `call(label, action)` | `T` | label sugar; fails fast while covered by a restriction |
+| `call(action, timeout, unit)` / `call(label, action, timeout, unit)` | `T` | as above with `TimeoutException` |
+| `callAsync(action)` / `callAsync(label, action)` | `CompletableFuture<T>` | non-blocking; safe from the hardware thread |
+| `labels(...)` / `slot(...)` | `Scope` | immutable scope binding labels/slot to `run`/`call`/`callAsync`/`bulkRead`; labels replace labels, slot replaces slot; malformed/empty input throws `IllegalArgumentException` |
 | `bulkRead(hz, reader)` | `BulkReadHandle` | periodic reader on the hardware thread |
 | `stopBulkRead(handle)` | `void` | cancel; null-safe |
+| `restrict(label, mode)` | `boolean` | sugar: restrict label + sublabels, `INDEPENDENT` children |
+| `restrict(label, mode, childPolicy)` | `boolean` | explicit child policy |
+| `restrict(label)` | `HardwareGate.RestrictionBuilder` | fluent: `.drop()`/`.queue()` (required) → `.sealChildren()`? → `.except(...)`* → `.apply()` |
+| `release(label)` | `boolean` | lifts the restriction at exactly that label; logs a drop summary |
+| `isRestricted(label)` | `boolean` | would work labelled `label` be covered right now? |
 | `isHardwareThread()` | `boolean` | thread identity check |
 | `assertNotHardwareThread()` | `void` | throws `IllegalStateException` on the hardware thread |
 | `tick()` | `void` | reserved no-op; called by `SafeOpMode.loop()` |
 | `shutdown()` | `void` | closes the whole orchestrator (sharp edge) |
+
+Gate operations (`restrict`/`release`/`apply`) never throw: refused calls return `false` and warn (malformed label, sealed ancestor, exception outside the subtree, nothing restricted there).
+
+### HardwareActions.Scope
+
+Labels and/or a slot bound to submissions. Returned by `labels(...)`/`slot(...)` on `HardwareActions` or `SafeDevice.Scope`; each configurator returns a **new** scope.
+
+| Method | Returns | Notes |
+| --- | --- | --- |
+| `labels(...)` / `slot(...)` | `Scope` | replace labels / slot |
+| `run(action)` | `void` | with the scope's labels and slot |
+| `call(action[, timeout, unit])` | `T` | as `HardwareActions.call` |
+| `callAsync(action)` | `CompletableFuture<T>` | as `HardwareActions.callAsync` |
+| `bulkRead(hz, reader)` | `BulkReadHandle` | labels only — throws `IllegalArgumentException` if the scope carries a slot |
+
+### HardwareGate
+
+The policy layer every hardware-thread submission passes through. Thread-safe; the operations also exist as sugar on `HardwareActions`.
+
+| Member | Returns | Notes |
+| --- | --- | --- |
+| `HardwareGate.ALL` | `String` (`"~all"`) | reserved root: restricting it covers every hardware action, labelled or not |
+| `HardwareGate.UNLABELLED` | `String` (`"~unlabelled"`) | reserved root: covers exactly label-less work; nothing else reaches it |
+| `validateLabels(labels)` | `static void` | throws `IllegalArgumentException` on malformed/reserved labels; used at `registerNode` |
+| `restrict` / `release` / `isRestricted` | — | same contracts as on `HardwareActions` |
+
+Nested `HardwareGate.Fate` — what happened to a submission at gate time: `DISPATCHED` (handed to the thread), `HELD` (held by a QUEUE restriction), `DROPPED` (prevented; the caller was notified). Nested `HardwareGate.RestrictionBuilder` — `drop()`, `queue()`, `sealChildren()`, `except(String...)`, `apply()` (single use; not thread-safe).
+
+### GateMode
+
+What a restriction does to covered work: `DROP` (never runs; counted and reported) or `QUEUE` (held; runs in submission order when uncovered). Periodic ticks are skipped under both.
+
+### ChildPolicy
+
+What a restriction allows its children: `INDEPENDENT` (default — children gateable freely, strictest wins) or `SEALED` (this restriction alone decides; `restrict`/`release` on covered descendants refused with `false` + warn; pre-existing child restrictions suspended and re-applied on lift). Exceptions sit outside both the restriction and its seal.
+
+### HardwareActionRejectedException
+
+Checked exception reporting that an action was prevented from running — the caller always finds out why. `reason()` → nested `Reason`: `DROPPED_BY_GATE` (a restriction covered it — DROP, or QUEUE where queueing was not an option: blocking `call` never waits) or `SUPERSEDED` (a newer same-slot action replaced it; not an error condition).
 
 ### `SafeDevice<T>`
 
@@ -141,7 +194,12 @@ Obtained via `orchestrator.hardware()` or the `SafeOpMode` `hardware` field.
 | `run(action)` | `void` | async; `Consumer<T>` |
 | `call(action)` | `R` | blocks; `Function<T, R>`; **deadlocks from the hardware thread** |
 | `callAsync(action)` | `CompletableFuture<R>` | non-blocking |
+| `labels(...)` / `slot(...)` | `SafeDevice.Scope<T>` | device-level mirror of `HardwareActions.labels/slot` |
 | `raw()` | `T` | hardware-thread code only |
+
+### `SafeDevice.Scope<T>`
+
+A `SafeDevice` bound to gate labels and/or a slot. `labels(...)` / `slot(...)` return a new scope; `run(action)` / `call(action)` / `callAsync(action)` mirror `SafeDevice` with the bindings applied.
 
 ### SafeHardwareMap
 
@@ -168,5 +226,6 @@ Obtained via `orchestrator.hardware()` or the `SafeOpMode` `hardware` field.
 
 ## Next steps
 
+- [Gating hardware work](/docs/guides/gating-hardware) — this surface composed into hold/drop/coalesce patterns.
 - [Architecture](/docs/concepts/architecture) — the behavior behind this surface.
 - [Recipes](/docs/recipes) — the surface composed into robot-validated patterns.

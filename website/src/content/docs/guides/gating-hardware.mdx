@@ -1,0 +1,261 @@
+---
+title: Gating hardware work
+description: Hold, drop, or coalesce hardware-thread work with labels, restrictions, and slots — two patterns end to end.
+---
+
+# Gating hardware work
+
+Some hardware work should not happen *yet*. Writes before the match timer starts. Teleop commands while a macro owns the arm. Anything at all when someone hits the e-stop. The `HardwareGate` decides, per piece of work, whether it may reach the hardware thread — and one rule governs everything it does:
+
+> **An action runs, or its caller finds out why it didn't — and nothing crashes.** Dropped work is counted and summarized in one warning. `callAsync` futures fail with a reason. Blocking `call` fails fast with a checked exception. Gate operations return `false` and warn — they never throw.
+
+## The policy surface
+
+Every hardware-thread submission — `hardware.run/call/callAsync/bulkRead`, `device.run/call/callAsync`, `@OnHardwareThread` dispatches, `hardware = true` ticks — may carry three optional things:
+
+| | What it is | What it buys you |
+| --- | --- | --- |
+| **Labels** | `/`-separated paths (`write`, `write/drive`) | name the work so a restriction can find it. A restriction on `write` covers `write/**` — downward only. |
+| **Restrictions** | `restrict(label, mode)` / `release(label)` | hold (`QUEUE`) or drop (`DROP`) covered work until you say otherwise. |
+| **Slots** | an opaque string (`"drive-power"`) | coalesce: at most one pending action per slot survives — only the newest runs. |
+
+All of it is optional. `hardware.run(r)` with no label and no slot is first-class and permanently supported — the gate only touches what you name (or everything, if you restrict `HardwareGate.ALL`). The full reference — the label tree, tilde escapes, sealed children, exceptions — is on the [HardwareActions](/docs/ftc/hardware-actions) page. This guide is the two patterns people actually build.
+
+## Which mode do I want?
+
+| Your work… | Mode | Why |
+| --- | --- | --- |
+| should still happen once it's safe — just later | `GateMode.QUEUE` | it is held and runs in submission order when the restriction lifts |
+| is worthless once delayed (stale setpoints) | `GateMode.DROP` | replaying it later is pointless — count it and move on |
+| is dangerous if it happens late (a claw closing on a stale position) | `GateMode.DROP` | "later" is worse than "never" |
+
+Either way, blocking `call(...)` fails fast instead of waiting — see [what happens when work is blocked](/docs/ftc/hardware-actions#what-happens-when-work-is-blocked). Periodic ticks are skipped under both modes (a tick is stale the moment it is late) and resume on release.
+
+## Example 1 — Hold hardware writes until the match timer starts
+
+The setup: the robot is in `init`, the driver station shows the timer at 0:00, and moving an arm or spinning an intake now would ruin calibration or a preload. Reads are fine — encoders and sensors can keep flowing — but **no write runs until the driver confirms the timer started.**
+
+Label every write `"write"`, restrict it in `QUEUE` mode, and release it from a gamepad trigger. Full `Drive` node:
+
+```java
+package org.firstinspires.ftc.teamcode.Subsystems;
+
+import com.aaravlabs.synapse.Node;
+import com.aaravlabs.synapse.Orchestrator;
+import com.aaravlabs.synapse.annotation.OnHardwareThread;
+import com.aaravlabs.synapse.annotation.RunPeriodically;
+import com.aaravlabs.synapse.annotation.SubscribedTo;
+import com.aaravlabs.synapse.ftc.GateMode;
+import com.aaravlabs.synapse.ftc.SafeDevice;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
+
+public class Drive extends Node {
+
+    private final SafeDevice<DcMotorEx> fl;
+    private final SafeDevice<DcMotorEx> fr;
+    private final SafeDevice<DcMotorEx> bl;
+    private final SafeDevice<DcMotorEx> br;
+
+    public Drive(Orchestrator orch,
+                 SafeDevice<DcMotorEx> frontLeft, SafeDevice<DcMotorEx> frontRight,
+                 SafeDevice<DcMotorEx> backLeft, SafeDevice<DcMotorEx> backRight) {
+        super(orch);
+        this.fl = frontLeft;
+        this.fr = frontRight;
+        this.bl = backLeft;
+        this.br = backRight;
+
+        // Hold every hardware write until the driver confirms the timer started.
+        // (Or put this in onSafeInit — before any node can make a write.)
+        orchestrator.hardware().restrict("write", GateMode.QUEUE);
+    }
+
+    // The teleop stream: labelled "write", slotted. While "write" is restricted,
+    // each new setpoint supersedes the last one in slot "drive-power", so exactly
+    // one write runs on release — the driver's current stick position.
+    @SubscribedTo(topic = "drive/set/powers")
+    @OnHardwareThread(labels = "write", slot = "drive-power")
+    public void onPowers(double[] powers) {
+        fl.raw().setPower(powers[0]);
+        fr.raw().setPower(powers[1]);
+        bl.raw().setPower(powers[2]);
+        br.raw().setPower(powers[3]);
+    }
+
+    // Reads are labelled "read" and keep flowing during the hold. (Unlabelled
+    // reads keep flowing too — only HardwareGate.ALL reaches those.)
+    @RunPeriodically(hz = 50, hardware = true, labels = "read")
+    public void publishEncoders() {
+        orchestrator.publish("drive/enc/fl", fl.raw().getCurrentPosition());
+        orchestrator.publish("drive/enc/fr", fr.raw().getCurrentPosition());
+        orchestrator.publish("drive/enc/bl", bl.raw().getCurrentPosition());
+        orchestrator.publish("drive/enc/br", br.raw().getCurrentPosition());
+    }
+
+    // The release trigger: the driver presses X to confirm the timer started.
+    @SubscribedTo(topic = "g1/x/rising")
+    public void onTimerStart() {
+        orchestrator.hardware().release("write");
+    }
+}
+```
+
+The stream source is your teleop OpMode's loop — it publishes and never touches hardware:
+
+```java
+@Override
+protected void onSafeLoop() {
+    double y = -gamepad1.left_stick_y;
+    double x = gamepad1.left_stick_x;
+    double r = -gamepad1.right_stick_x;
+    double[] p = new double[] { y + x + r, y - x - r, y - x + r, y + x + r };
+    double max = Math.max(Math.abs(y) + Math.abs(x) + Math.abs(r), 1);
+    for (int i = 0; i < 4; i++) {
+        p[i] /= max;
+    }
+    orchestrator.publish("drive/set/powers", p);
+}
+```
+
+What happens, step by step:
+
+1. `onSafeInit` registers `Drive`, whose constructor restricts `"write"`. From then on, nothing labelled `write/**` reaches the hardware thread.
+2. The driver wiggles the sticks during `init_loop`. Each `onPowers` dispatch is held by the gate — and the **slot collapses the stream**: a newer setpoint supersedes the older one before it starts (`Reason.SUPERSEDED`), so only the *latest* pending setpoint survives per slot. Without the slot, every held dispatch would queue and replay in a burst the moment you release.
+3. Reads (`labels = "read"`) and anything unlabelled are not covered — telemetry keeps updating.
+4. The driver presses X. `release("write")` lifts the restriction at exactly that label; the held setpoint runs immediately, teleop takes over, and a one-line warning summarizes anything dropped while restricted.
+
+> **One slot, one action.** The four motor writes above share one dispatch — and one slot. Four separate slotted submissions would coalesce into one (the last submitted). Put a multi-device write in a single `run(...)` body, or give each stream its own slot.
+
+**Stale writes are worse than no writes?** Swap the mode: `restrict("write", GateMode.DROP)` in the constructor discards every write while restricted instead of holding it — on release, teleop simply starts from the current stick position. Use `QUEUE` when the held work should still happen (a claw that must finish closing); use `DROP` when replaying an old command is dangerous or pointless.
+
+**No node may renegotiate the hold.** Add `.sealChildren()`:
+
+```java
+orchestrator.hardware().restrict("write").queue().sealChildren().apply();
+```
+
+While sealed, `restrict`/`release` on covered sublabels (`write/drive`, `write/claw`, …) is refused — `false` and a warning, never a throw — and pre-existing restrictions under `write` are suspended until the hold lifts (then re-applied, including retro-dropping then-held work). The only way past the hold is `release("write")` itself. Ship this variant on a real robot; keep the plain one for prototyping.
+
+## Example 2 — Freeze a subsystem while an action runs
+
+The setup: a `transfer` macro moves the arm and runs the intake for a second and a half. During the macro, teleop commands to that subsystem must not fight it — but the macro's own writes must get through, and when it finishes, the subsystem is teleop's again.
+
+Restrict the subsystem label in `QUEUE` mode, **except** the macro's label, and release in `whenComplete`:
+
+```java
+package org.firstinspires.ftc.teamcode.Subsystems;
+
+import com.aaravlabs.synapse.Node;
+import com.aaravlabs.synapse.Orchestrator;
+import com.aaravlabs.synapse.annotation.OnHardwareThread;
+import com.aaravlabs.synapse.annotation.RunnableAction;
+import com.aaravlabs.synapse.annotation.SubscribedTo;
+import com.aaravlabs.synapse.ftc.SafeDevice;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.Servo;
+
+public class Transfer extends Node {
+
+    private final SafeDevice<Servo> arm;
+    private final SafeDevice<DcMotorEx> intake;
+
+    public Transfer(Orchestrator orch, SafeDevice<Servo> arm, SafeDevice<DcMotorEx> intake) {
+        super(orch);
+        this.arm = arm;
+        this.intake = intake;
+    }
+
+    @SubscribedTo(topic = "transfer/start")
+    public void onStart(Boolean go) {
+        if (!go || orchestrator.hardware().isRestricted("transfer")) {
+            return; // already frozen
+        }
+        // Freeze the subsystem's teleop writes. The macro's own writes are
+        // labelled "transfer/macro" and excepted, so they pass straight through.
+        orchestrator.hardware().restrict("transfer").queue()
+                .except("transfer/macro")
+                .apply();
+
+        orchestrator.runAction("transfer").whenComplete((done, err) ->
+                orchestrator.hardware().release("transfer"));
+    }
+
+    // The teleop stream, bounded by its slot: while frozen, only the newest
+    // intake command survives to run when the freeze lifts.
+    @SubscribedTo(topic = "transfer/intake-power")
+    @OnHardwareThread(labels = "transfer", slot = "intake-power")
+    public void onIntakePower(Double power) {
+        intake.raw().setPower(power);
+    }
+
+    @RunnableAction("transfer")
+    public void transferMacro() throws InterruptedException {
+        // Each step is one excepted hardware write; the waits happen here on the
+        // action pool — never on the hardware thread.
+        orchestrator.hardware().labels("transfer/macro").run(() -> arm.raw().setPosition(0.2));
+        Thread.sleep(250);
+        orchestrator.hardware().labels("transfer/macro").run(() -> arm.raw().setPosition(0.9));
+        Thread.sleep(300);
+        orchestrator.hardware().labels("transfer/macro").run(() -> intake.raw().setPower(0.0));
+    }
+}
+```
+
+Why each piece is there:
+
+- **`except("transfer/macro")`** carves the macro's label (and its sublabels) out of *this* restriction only — `transfer/macro` is a sublabel of `transfer`, so without the carve-out the macro would freeze itself out. Other restrictions still apply to the carved-out labels, and an exception outside the covered subtree refuses the whole `apply()` (`false` + a warn).
+- **Prefer unlabelled macro writes?** They work too — nothing but `HardwareGate.ALL` / `HardwareGate.UNLABELLED` reaches unlabelled work. But labelling them `"transfer/macro"` keeps them reachable by a global e-stop, which is why it's the better default.
+- **The slot** (`"intake-power"`) bounds the held teleop stream: without it, every held command queues (with a drop-oldest safety valve at 1024 per restriction) and replays in a burst; with it, exactly one — the latest — runs on release. That is the whole point: the operator's *current* command wins, not a replayed history.
+- **`runAction("transfer").whenComplete(...)`** ties the freeze to the action's real lifetime. If the macro throws, `whenComplete` still releases — the freeze cannot outlive its reason. (Guarding with `isRestricted("transfer")` keeps a second button press from stacking restrictions.)
+
+The same shape with **`sealChildren()`** — nothing under `transfer` may be renegotiated mid-macro:
+
+```java
+orchestrator.hardware().restrict("transfer").queue()
+        .sealChildren()
+        .except("transfer/macro")
+        .apply();
+```
+
+The excepted subtree sits outside the seal: `transfer/macro` stays uncovered *and* independently gateable while the freeze runs.
+
+The **topic-driven variant** — when the safe condition is a robot state rather than an action's lifetime, toggle the freeze from a state topic:
+
+```java
+@SubscribedTo(topic = "shooter/spinning-up")
+public void onSpinningUp(Boolean spinningUp) {
+    if (spinningUp) {
+        orchestrator.hardware().restrict("shooter", GateMode.QUEUE); // freeze shooter writes
+    } else {
+        orchestrator.hardware().release("shooter");                  // thaw
+    }
+}
+```
+
+While the shooter spins up, every `shooter/**` write is held and the slotted setpoint stream collapses to the latest command; when the state topic flips back, the newest setpoint runs and teleop resumes.
+
+And when you need **everything** to stop — a tip-over, a tangle, a driver shouting stop — stop everything:
+
+```java
+orchestrator.hardware().restrict(HardwareGate.ALL).drop().sealChildren().apply();
+```
+
+> **This is the full stop.** `HardwareGate.ALL` covers every hardware action — labelled *or not* — `drop()` discards it all, and `sealChildren()` means nothing below it can renegotiate. Unreleased, no piece of hardware in the program moves again. Keep it one call away in an e-stop handler.
+
+## Escaping `/` in label names
+
+Labels are `/`-separated, so a literal `/` or `~` inside one segment needs a JSON-Pointer-style escape: `~1` is `/`, `~0` is `~`. Decode runs left-to-right in one pass, so `~01` is the literal `~1`, never `/`.
+
+| You write | Decoded | Under `write`? |
+| --- | --- | --- |
+| `write/drive` | `write`, `drive` | yes |
+| `write~1part` | `write/part` (one segment) | **no** |
+| `claw~0v2` | `claw~v2` | — |
+
+Matching is by whole decoded segments — `write` never catches `writex`. Malformed labels (`write~`, `write~2`, `a//b`, `/a`, `a/`, empty) throw `IllegalArgumentException` at submission or `registerNode`; gate operations refuse them with `false` and a warning. The reserved roots `HardwareGate.ALL` (`~all`) and `HardwareGate.UNLABELLED` (`~unlabelled`) can restrict work but never label it. Full table on the [HardwareActions](/docs/ftc/hardware-actions) page.
+
+## Next steps
+
+- [HardwareActions](/docs/ftc/hardware-actions) — the complete label, slot, and gate reference.
+- [`@OnHardwareThread`](/docs/annotations/on-hardware-thread) — labelling and slotting subscriber dispatches.
+- [Testing](/docs/guides/testing) — verifying the gate on the bench before the field.

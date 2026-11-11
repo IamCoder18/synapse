@@ -4,7 +4,7 @@ The guarantees Synapse provides around FTC hardware access. Every claim is scope
 
 ## 1. Single-threaded hardware execution
 
-**Claim.** Every piece of hardware-touching code routed through Synapse — `@OnHardwareThread` subscribers, `@RunPeriodically(hardware = true)` loops, `HardwareActions.run/call/callAsync/bulkRead`, and `SafeDevice.run/call/callAsync` — executes on the same single OS thread, strictly serially.
+**Claim.** Every piece of hardware-touching code routed through Synapse — `@OnHardwareThread` subscribers, `@RunPeriodically(hardware = true)` loops, `HardwareActions.run/call/callAsync/bulkRead`, and `SafeDevice.run/call/callAsync` — executes on the same single OS thread, strictly serially. Labelled work may additionally be skipped or dropped by the gate (see invariant 6) before it reaches the thread.
 
 **Where.** `OrchestratorImpl` creates the hardware worker via `Executors.newSingleThreadScheduledExecutor(hwTf)`; the thread is captured at construction and compared by identity in `isHardwareThread()`.
 
@@ -43,6 +43,14 @@ The guarantees Synapse provides around FTC hardware access. Every claim is scope
 **Claim.** Exceptions thrown inside subscribers, periodic loops, or actions are logged through the orchestrator's `LogSink` and never crash the OpMode or kill the schedule.
 
 **Where.** Every dispatch wrapper (`dispatchCallback`, `schedulePeriodic`, `scheduleHardwarePeriodic`, `scheduleHardwareBulkRead`, the action runner) catches `Throwable`, logs, and returns. Note: the annotation binder's wrapper rethrows after logging, but the orchestrator's outer catch still prevents schedule death.
+
+## 6. The gate guarantee — an action runs, or its caller finds out why it didn't
+
+**Claim.** Every hardware-thread submission — `HardwareActions.run/call/callAsync/bulkRead`, `SafeDevice.run/call/callAsync`, `@OnHardwareThread` dispatches, `@RunPeriodically(hardware = true)` ticks — either runs, or its caller finds out why it didn't — **and nothing crashes**. Futures always complete (result or `HardwareActionRejectedException`); blocking `call` fails fast with the checked `HardwareActionRejectedException` rather than waiting behind a `QUEUE` hold; fire-and-forget `run` work is counted and summarised in one warning per `release`; gate operations (`restrict`/`release`/`apply`) return `boolean` and warn — never throw; and held work is re-evaluated on every gate change, so `DROP` means never (work held under `QUEUE` is dropped retroactively if a later `DROP` restriction covers it).
+
+**Where.** `HardwareGate` — `submit`/`resolveFate` at submission time, `reevaluate` on every restrict/release, per-restriction drop/skip counters summarised in `release` — and `HardwareActions` — `callBlocking` (fail fast on non-dispatch) and `callAsync0` (exceptional future completion).
+
+**Test.** `src/test/java/com/aaravlabs/synapse/ftc/HardwareGateTest.java`.
 
 ## Thread inventory
 

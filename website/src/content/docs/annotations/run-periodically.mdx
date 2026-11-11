@@ -21,6 +21,7 @@ public void drive() { /* touches motors — runs on the hardware thread */ }
 | --- | --- | --- | --- |
 | `hz` | `int` | `20` | target frequency in hertz. Must be `> 0`; an invalid value logs a warning and skips the loop. |
 | `hardware` | `boolean` | `false` | when `true`, the loop runs on the single dedicated hardware thread instead of the scheduler pool. |
+| `labels` | `String[]` | `{}` | gate labels for hardware ticks — only meaningful with `hardware = true`. |
 
 ## Method signature rules
 
@@ -45,6 +46,20 @@ public void drive() {
     left.run(m -> m.setPower(y));
 }
 ```
+
+## Gate labels
+
+`labels` gives the loop's ticks [gate labels](/docs/ftc/hardware-actions), so one `hardware().restrict("write", ...)` can freeze a whole family of loops at once:
+
+```java
+@RunPeriodically(hz = 50, hardware = true, labels = "write")
+public void drive() { /* every tick is labelled "write" */ }
+```
+
+- While a gate restriction covers any label, **that tick is skipped** — under `DROP` *and* `QUEUE` alike. Ticks are never held or queued: a tick is stale the moment it is late. The loop resumes on its normal schedule once the label is released.
+- **Periodic work has no slots.** A tick is one tick — there is nothing to coalesce. (`Scope.bulkRead(...)` on a slotted scope throws `IllegalArgumentException` for the same reason.)
+- `labels` without `hardware = true` logs a warning and does nothing — the gate governs the hardware thread.
+- Malformed labels throw at `registerNode`; the reserved `HardwareGate.ALL` / `HardwareGate.UNLABELLED` roots cannot label a tick. The single-element shorthand `labels = "write"` works in Java.
 
 ## Error behavior
 

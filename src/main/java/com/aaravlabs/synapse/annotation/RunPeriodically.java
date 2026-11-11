@@ -24,6 +24,12 @@ import java.lang.annotation.Target;
  * write FTC hardware — for example, a 50 Hz drive loop that sets motor power every
  * tick. See {@link OnHardwareThread} for the full rationale.
  *
+ * <p>{@link #labels()} gives hardware ticks gate labels. While a
+ * {@link com.aaravlabs.synapse.ftc.HardwareGate gate} restriction covers a label,
+ * the tick is <b>skipped</b> — never queued, because a tick is stale the moment it
+ * is late — and the loop resumes on its normal schedule once released. Labels have
+ * no effect without {@code hardware = true} (the gate governs the hardware thread).
+ *
  * <p>Example:
  * <pre>{@code
  * @RunPeriodically(hz = 50)
@@ -31,7 +37,7 @@ import java.lang.annotation.Target;
  *     // math or state machines — no hardware access
  * }
  *
- * @RunPeriodically(hz = 50, hardware = true)
+ * @RunPeriodically(hz = 50, hardware = true, labels = "write")
  * public void drive() {
  *     fl.run(m -> m.setPower(powerFL));
  * }
@@ -50,4 +56,15 @@ public @interface RunPeriodically {
      * strictly serially.
      */
     boolean hardware() default false;
+
+    /**
+     * Gate labels for hardware ticks, as {@code /}-separated paths. While a gate
+     * restriction covers any of them, that tick is skipped (DROP and QUEUE alike —
+     * ticks are never held) and the loop resumes on release. May be empty (the
+     * default): no labels. Only meaningful with {@code hardware = true};
+     * {@link com.aaravlabs.synapse.ftc.HardwareGate#ALL} and
+     * {@link com.aaravlabs.synapse.ftc.HardwareGate#UNLABELLED} are reserved.
+     * Malformed labels fail fast at {@code registerNode}.
+     */
+    String[] labels() default {};
 }

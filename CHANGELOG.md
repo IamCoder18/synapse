@@ -8,6 +8,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Hardware-thread labels, gate restrictions, and slots: every piece of
+  scheduled hardware work can now be named, held back, or collapsed to its
+  newest form before it reaches the thread.** Every hardware-thread submission
+  -- `HardwareActions.run/call/callAsync/bulkRead`, `SafeDevice` calls,
+  `@OnHardwareThread` dispatches, and `@RunPeriodically(hardware = true)` ticks
+  -- may carry any number of optional **labels** and one optional **slot**, and
+  passes through a `HardwareGate` that decides whether it may run.
+
+  Labels are `/`-separated paths and the path structure is the hierarchy:
+  `write/drive` is a sublabel of `write`, `restrict("write", ...)` covers it,
+  and coverage travels downward only -- a restriction on `write/drive` never
+  holds `write`, `writex` is never caught by `write`, and matching compares
+  decoded segments, never raw string prefixes. Literal `/` and `~` inside a
+  segment are escaped JSON-Pointer style (`~1`, `~0`), decoded left to right so
+  `~01` is the literal `~1`; `write~1part` is therefore a single segment named
+  `write/part` and deliberately *not* under `write`. Malformed labels
+  (`write~`, `write~2`, `a//b`, `/a`, `a/`, empty) throw
+  `IllegalArgumentException` at submission, at annotation binding (so a bad
+  label fails at `registerNode`, not at first dispatch), and are refused with
+  `false` plus a warning by gate operations. Two reserved labels anchor the
+  tree: `HardwareGate.ALL` covers every hardware action -- including work with
+  no labels at all -- and `HardwareGate.UNLABELLED` covers exactly the
+  label-less work, which no other label can reach. Labelling is always
+  optional: unlabelled, unslotted submissions are first-class and behave
+  exactly as before.
+
+  `restrict(label, GateMode.DROP)` discards covered work; `restrict(label,
+  GateMode.QUEUE)` holds it and runs it in submission order once nothing covers
+  it any more. An action carrying several labels is covered when *any* of them
+  is covered, and the strictest covering restriction decides (DROP beats QUEUE
+  beats running). Held actions are re-evaluated on every gate change: a
+  restriction that starts dropping later drops still-held work at that moment
+  (DROP means never, regardless of who got there first), and work runs only
+  once every one of its labels is free. `release(label)` removes the
+  restriction at exactly that node and logs one summary warning of what was
+  dropped or skipped while it was restricted -- per-restriction counters make
+  a 50 Hz stream visible without a 50 Hz wall of log spam.
+
+  The fluent form adds policy on top: `hardware.restrict("shooter").drop()
+  .sealChildren().except("shooter/write").apply()`. A `ChildPolicy.SEALED`
+  restriction decides alone for its covered subtree -- `restrict`/`release` on
+  covered descendants are refused (`false` plus a warning; gate operations
+  never throw, so a misbehaving node cannot end a match) and pre-existing child
+  restrictions are suspended, kept rather than deleted, and re-applied the
+  moment the seal lifts. `except(label)` carves that label's subtree out of the
+  restriction -- `except("shooter/write")` also uncovers `shooter/write/power`
+  -- but only out of *that* restriction: another restriction still applies to
+  the uncovered labels, and an excepted subtree sits outside the seal too, so
+  it stays independently gateable. Exceptions must name a node inside the
+  covered subtree, or the whole restriction is refused. Re-restricting a label
+  replaces its entire spec (mode, child policy, exceptions); the builder
+  refuses to apply without an explicit `.drop()` or `.queue()`, because the
+  mode is a safety decision worth writing down.
+
+  A **slot** is an opaque coalescing key: at most one *pending* action per slot
+  exists anywhere -- held by a gate or merely queued behind busy hardware work
+  -- and a newer action supersedes the older one unless it has already started,
+  so only the most recent action per slot is ever used. A 50 Hz setpoint
+  stream, or a flooded setpoint topic on a slotted `@OnHardwareThread`
+  subscriber, collapses to a single latest write instead of piling up, and a
+  long hold cannot grow the queue. Slots never apply to periodic work, where
+  they would be meaningless: a labelled hardware tick or bulk-read tick is
+  *skipped* while covered (under DROP and QUEUE alike -- a tick is stale the
+  moment it is late) and the loop resumes on its normal schedule at release.
+
+  The error story is one rule: **an action runs, or its caller finds out why it
+  didn't -- and nothing crashes.** Fire-and-forget `run` is counted and
+  summarised at release. `callAsync` completes its future exceptionally with
+  `HardwareActionRejectedException` carrying a `Reason` (`DROPPED_BY_GATE` or
+  `SUPERSEDED` -- the latter is not an error condition, it is what slot
+  coalescing means). Blocking `call` fails fast with the same checked exception
+  rather than ever waiting behind a QUEUE hold -- `call` already declares
+  `throws Exception`, so this is source-compatible and the compiler forces
+  every caller to handle it. An unobserved failed future is inert; the robot
+  does not stop because a write was held back.
+
+  `SafeDevice` mirrors the surface (`device.labels("write")
+  .slot("intake-power").run(...)`), the annotations carry the same tokens
+  (`@OnHardwareThread(labels = "write", slot = "drive-power")`,
+  `@RunPeriodically(hardware = true, labels = "write")`), and `HardwareActions`
+  gains `restrict` / `release` / `isRestricted` plus labelled overloads and an
+  immutable scoped view (`hw.labels(...).slot(...)`). The motivating case --
+  preventing every hardware WRITE until the match timer safely starts as
+  decided by a button -- is three lines of gate and one subscriber, and the
+  website's gating guide walks through it and through freezing a subsystem for
+  the duration of a `@RunnableAction`.
+
+### Fixed
+
+- **`HardwareActions.call` / `callAsync` on a closed orchestrator now fail
+  immediately instead of hanging.** Previously the submission was silently
+  ignored and the caller's future never completed, so a blocking `call` waited
+  forever. Both now report the closed orchestrator through the same channel as
+  a gate rejection (`call` throws, `callAsync` fails its future).
+
 ## [0.4.1] - 2026-10-12
 
 ### Fixed

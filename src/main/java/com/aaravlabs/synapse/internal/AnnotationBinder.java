@@ -60,6 +60,11 @@ public final class AnnotationBinder {
             }
             long delayMs = Math.max(1, 1000L / rp.hz());
 
+            if (!rp.hardware() && rp.labels().length > 0) {
+                orchestrator.warn("@RunPeriodically labels have no effect without "
+                        + "hardware = true on " + m);
+            }
+
             ScheduledFuture<?> f;
             if (rp.hardware()) {
                 f = orchestrator.scheduleHardwarePeriodic(() -> {
@@ -73,7 +78,7 @@ public final class AnnotationBinder {
                         orchestrator.error("@RunPeriodically(hardware) method threw: " + m, t);
                         throw new RuntimeException(t);
                     }
-                }, delayMs);
+                }, delayMs, rp.labels());
             } else {
                 f = orchestrator.schedulePeriodic(() -> {
                     try {
@@ -115,7 +120,17 @@ public final class AnnotationBinder {
 
         m.setAccessible(true);
 
-        boolean onHardware = m.isAnnotationPresent(OnHardwareThread.class);
+        OnHardwareThread hwAnno = m.getAnnotation(OnHardwareThread.class);
+        boolean onHardware = hwAnno != null;
+        String[] hwLabels = null;
+        String hwSlot = null;
+        if (onHardware) {
+            // Fail fast at registerNode on malformed/reserved labels, not at first
+            // dispatch. Empty slot string on the annotation means "no slot".
+            com.aaravlabs.synapse.ftc.HardwareGate.validateLabels(hwAnno.labels());
+            hwLabels = hwAnno.labels().length == 0 ? null : hwAnno.labels().clone();
+            hwSlot = hwAnno.slot().isEmpty() ? null : hwAnno.slot();
+        }
 
         for (SubscribedTo sub : subs) {
             Subscription s;
@@ -154,9 +169,11 @@ public final class AnnotationBinder {
             // If @OnHardwareThread is present, re-route this subscription's
             // handler to the hardware thread. We do this by wrapping the
             // subscription in a special wrapper that, when invoked, submits
-            // work to hardwareThread instead of the callback pool.
+            // work to hardwareThread instead of the callback pool. The
+            // annotation's labels and slot ride along: each dispatch is one
+            // gate submission.
             if (onHardware) {
-                orchestrator.markSubscriptionAsHardwareThreaded(s);
+                orchestrator.markSubscriptionAsHardwareThreaded(s, hwLabels, hwSlot);
             }
             orchestrator.trackNodeSubscription(node, s);
         }

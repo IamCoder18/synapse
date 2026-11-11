@@ -16,4 +16,6 @@ Everything below is **fully supported by the library today** — the APIs are st
 
 - **Field-centric mecanum drive** — IMU lookup via [`safeMap.device(IMU.class, ...)`](/docs/ftc/safe-device), heading rotation before the mix.
 - **Bulk sensor reads** — [`bulkRead`](/docs/ftc/hardware-actions) for motors, encoders, and current.
+- **Hold hardware writes until the match timer starts** — [`restrict("write", GateMode.QUEUE)`](/docs/guides/gating-hardware) at init, `release("write")` from a `g1/x/rising` trigger, and a slotted (`@OnHardwareThread(labels = "write", slot = ...)`) teleop stream that collapses to the latest setpoint. Walkthrough: [gating hardware work](/docs/guides/gating-hardware).
+- **Freeze a subsystem while an action runs** — [`restrict(...).queue().except(...)`](/docs/guides/gating-hardware) around an [`orchestrator.runAction(...)`](/docs/concepts/orchestrator), with `release` in `whenComplete` and slots bounding the held teleop stream. Walkthrough: [gating hardware work](/docs/guides/gating-hardware).
 - **Autonomous skeleton** — state machine in a [`@RunPeriodically`](/docs/annotations/run-periodically) loop over topics.

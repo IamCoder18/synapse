@@ -41,6 +41,21 @@ public void drive() {
 
 > **Never `call(...)` from the hardware thread.** `intake.call(...)` inside a `hardware = true` loop blocks the single hardware thread on itself — the robot hangs. Inside hardware-thread code, use `raw()` (or submit work with `run(...)`, which just queues onto the thread you're already on).
 
+## Labels and slots
+
+`SafeDevice` mirrors the `HardwareActions` [gate surface](/docs/ftc/hardware-actions): `labels(...)` and `slot(...)` return a new immutable `SafeDevice.Scope<T>` whose `run`, `call`, and `callAsync` carry the bindings.
+
+```java
+SafeDevice<DcMotorEx> intake = safeMap.device(DcMotorEx.class, "intake");
+
+// Labelled "write" (gateable) and slotted (only the newest pending power survives):
+intake.labels("write").slot("intake-power").run(m -> m.setPower(p));
+
+intake.labels("read").call(DcMotorEx::getCurrentPosition);   // reads keep flowing
+```
+
+While a [gate restriction](/docs/ftc/hardware-actions) covers a label, the call is dropped or held like any hardware submission; a slot coalesces the stream so only the most recent pending action per slot runs. Labels replace labels, slot replaces slot — each configurator call returns a fresh scope. As with plain `SafeDevice`, **never `call(...)` on a scope from the hardware thread**.
+
 ## SafeHardwareMap — where devices come from
 
 `SafeOpMode` creates a `SafeHardwareMap` as `safeMap`, wrapping the SDK `hardwareMap`:
@@ -61,5 +76,6 @@ Each `device(class, name)` performs the same lookup the SDK would, but returns t
 
 ## Next steps
 
+- [Gating hardware work](/docs/guides/gating-hardware) — labels, restrictions, and slots in practice.
 - [HardwareActions](/docs/ftc/hardware-actions) — the facade these wrappers submit to.
 - [Mecanum drive](/docs/recipes/mecanum-drive) — SafeDevice usage on a real drivetrain.

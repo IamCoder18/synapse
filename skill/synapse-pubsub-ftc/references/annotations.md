@@ -30,23 +30,25 @@ Gotchas:
 ## @RunPeriodically
 
 ```java
-@RunPeriodically(hz = 50, hardware = true)
+@RunPeriodically(hz = 50, hardware = true, labels = {"write"})
 public void drive() { /* touches motors */ }
 ```
 
 | Aspect | Contract |
 | --- | --- |
-| Attributes | `hz()` — int, default 20, must be > 0. `hardware()` — boolean, default `false`. |
+| Attributes | `hz()` — int, default 20, must be > 0. `hardware()` — boolean, default `false`. `labels()` — `String[]`, default `{}` — gate labels for hardware ticks. |
 | Repeatable | Yes (container `RunPeriodicallys`). |
 | Parameters | None. Return ignored. Static methods rejected with `IllegalArgumentException` at `registerNode`. |
 | Scheduling | `scheduleWithFixedDelay`, delay = `max(1, 1000/hz)` ms between **completions**. Effective rate ≤ `hz`. First invocation immediate. |
 | Pool | Scheduler (8 threads) or the single hardware thread with `hardware = true`. |
+| Gate labels | While a restriction covers any of `labels()`, the tick is **skipped** — DROP and QUEUE alike; ticks are never held or queued (a tick is stale the moment it is late) — and the loop resumes on its normal schedule on release. **No slots**: periodic work has labels only. `labels` without `hardware = true` → WARN + ignored. Malformed/reserved labels → `IllegalArgumentException` at `registerNode`. |
 | Errors | `hz <= 0` logs a warning and skips the loop. Body exceptions are logged; the loop keeps running. |
 | Cleanup | Future tracked per node; cancelled on unregister/close. |
 
 Gotchas:
 - Forgetting `hardware = true` on a device-touching loop is the most common migration bug — the loop runs on the scheduler pool where hardware access is forbidden.
 - A loop body slower than `1000/hz` ms simply runs slower; it never overlaps itself.
+- A covered labelled tick skips cleanly — nothing accumulates during the hold and nothing replays at release.
 
 ## @RunnableAction
 
@@ -77,10 +79,17 @@ public void onTarget(double power) { ... }
 
 | Aspect | Contract |
 | --- | --- |
-| Attributes | None — pure marker. |
+| Attributes | `labels()` — `String[]`, default `{}` (gate labels). `slot()` — `String`, default `""` (coalescing slot). Both optional — bare `@OnHardwareThread` still works. |
 | Applies to | Only meaningful combined with `@SubscribedTo`. No effect on `@RunPeriodically` methods (use `hardware = true`) or `@RunnableAction`. |
-| Dispatch | The binder wraps the subscription handler so it submits onto the single dedicated hardware thread (`synapse-<name>-hw-1`). |
+| Dispatch | The binder wraps the subscription handler so it submits onto the single dedicated hardware thread (`synapse-<name>-hw-1`). Each dispatch is one gate submission carrying `labels()`/`slot()`. |
 | Guarantees | Strictly serial with all other hardware-thread work; never overlaps. |
+| Labels / slot | While a gate restriction covers any label, dispatches are dropped or held per the restriction's `GateMode` (dropped ones are counted; one summary WARN at release). With a slot, at most one undelivered dispatch exists — a newer message supersedes the older (`Reason.SUPERSEDED`), so a flooded setpoint topic collapses to its latest value. Malformed/reserved labels throw `IllegalArgumentException` at `registerNode`. Unlabelled is the default and stays first-class (reachable only via `HardwareGate.ALL` / `HardwareGate.UNLABELLED`). |
+
+```java
+@SubscribedTo(topic = "drive/set/power")
+@OnHardwareThread(labels = {"write"}, slot = "drive-power")
+public void onPower(double p) { motor.setPower(p); }   // gate-labelled, coalesced setpoint
+```
 
 **What it does NOT do:**
 
